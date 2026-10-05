@@ -48,11 +48,17 @@ class Filter(JSONPath):
                 if all(expression.find(value) for expression in self.expressions)
             ]
         elif isinstance(datum.value, list):
-            return [
-                DatumInContext(value, path=Index(index), context=datum)
-                for index, value in enumerate(datum.value)
-                if all(expression.find(value) for expression in self.expressions)
-            ]
+            results = []
+            for index, value in enumerate(datum.value):
+                if all(expression.find(value) for expression in self.expressions):
+                    results.append(
+                        DatumInContext(
+                            value,
+                            path=Index(index),
+                            context=datum,
+                        )
+                    )
+            return results
         else:
             return []
 
@@ -104,14 +110,31 @@ class Expression(JSONPath):
         found = []
         for data in datum:
             value = data.value
-            if type(self.value) is int:
-                try:
-                    value = int(value)
-                except ValueError:
+            if self.value is None:
+                matched = (
+                    value is not None
+                    if self.op == "!="
+                    else value is None and OPERATOR_MAP[self.op](value, self.value)
+                )
+            elif isinstance(self.value, bool):
+                matched = isinstance(value, bool) and OPERATOR_MAP[self.op](
+                    value, self.value
+                )
+                if not matched:
                     continue
+            elif isinstance(self.value, (int, float)):
+                matched = (
+                    not isinstance(value, bool)
+                    and isinstance(value, (int, float))
+                    and OPERATOR_MAP[self.op](value, self.value)
+                )
+            else:
+                matched = OPERATOR_MAP[self.op](value, self.value)
 
-            if OPERATOR_MAP[self.op](value, self.value):
-                found.append(data)
+            if not matched:
+                continue
+
+            found.append(data)
 
         return found
 

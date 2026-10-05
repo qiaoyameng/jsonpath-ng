@@ -24,7 +24,7 @@ from . import string as _string
 class ExtendedJsonPathLexer(lexer.JsonPathLexer):
     """Custom LALR-lexer for JsonPath"""
     literals = lexer.JsonPathLexer.literals + ['?', '@', '+', '*', '/', '-']
-    tokens = (['BOOL'] +
+    tokens = (['BOOL', 'NULL'] +
               parser.JsonPathLexer.tokens +
               ['FILTER_OP', 'SORT_DIRECTION', 'FLOAT'])
 
@@ -33,6 +33,11 @@ class ExtendedJsonPathLexer(lexer.JsonPathLexer):
     def t_BOOL(self, t):
         r'true(?![a-zA-Z0-9_@\-])|false(?![a-zA-Z0-9_@\-])'
         t.value = True if t.value == 'true' else False
+        return t
+
+    def t_NULL(self, t):
+        r'null(?![a-zA-Z0-9_@\-])'
+        t.value = None
         return t
 
     def t_SORT_DIRECTION(self, t):
@@ -57,6 +62,10 @@ class ExtendedJsonPathParser(parser.JsonPathParser):
     """Custom LALR-parser for JsonPath"""
 
     tokens = ExtendedJsonPathLexer.tokens
+
+    def p_fields_or_any_null(self, p):
+        "fields_or_any : NULL"
+        p[0] = ['null']
 
     def __init__(self, debug=False, lexer_class=None):
         lexer_class = lexer_class or ExtendedJsonPathLexer
@@ -115,6 +124,7 @@ class ExtendedJsonPathParser(parser.JsonPathParser):
                       | jsonpath FILTER_OP FLOAT
                       | jsonpath FILTER_OP NUMBER
                       | jsonpath FILTER_OP BOOL
+                      | jsonpath FILTER_OP NULL
         """
         if len(p) == 2:
             left, op, right = p[1], None, None

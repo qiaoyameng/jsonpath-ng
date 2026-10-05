@@ -103,6 +103,30 @@ Using the extended parser:
   >>> jsonpath_expr = parse('foo[*].baz')
 
 
+SQLite compilation
+------------------
+
+JSON documents stored as JSON text in SQLite columns can be queried without a
+database server. The compiler supports named fields, non-negative indices,
+``[*]`` array wildcards, and scalar comparisons:
+
+.. code:: python
+
+    >>> import sqlite3
+    >>> from jsonpath_ng import compile_sqlite
+
+    >>> query = compile_sqlite('items[?price < 10].name', 'documents', 'body')
+    >>> connection = sqlite3.connect(':memory:')
+    >>> connection.execute('CREATE TABLE documents (body TEXT)')
+    >>> connection.execute(query.sql, query.parameters)  # doctest: +SKIP
+
+Each row contains ``source_rowid``, ``match_value`` as JSON text, and
+``match_path``. Field names, indices, and comparison values are bound as SQL
+parameters; table and column names must be controlled application identifiers.
+Unsupported JSONPath expressions raise ``SQLiteJSONPathError`` instead of being
+silently simplified.
+
+
 JSONPath Syntax
 ---------------
 
