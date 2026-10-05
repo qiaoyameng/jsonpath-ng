@@ -103,6 +103,34 @@ Using the extended parser:
   >>> jsonpath_expr = parse('foo[*].baz')
 
 
+Using the RFC 9535 parser:
+
+.. code:: python
+
+  $ python
+
+  >>> from jsonpath_ng.rfc9535 import parse
+
+  >>> jsonpath_expr = parse("$.store.book[?@.price < 10].title")
+  >>> [match.value for match in jsonpath_expr.find(data)]
+
+This parser is deliberately separate from the legacy parser and
+``jsonpath_ng.ext``. It supports RFC 9535 names, indices, slices,
+wildcards, descendants, and logical filter expressions. In particular,
+filters use the RFC model of node lists, JSON values, and ``Nothing``:
+existence tests only require a non-empty node list, ``null`` and booleans
+keep their JSON types, comparisons reject multi-value queries, and JSON
+``true`` is not equal to numeric ``1``. Matches expose their normalized
+path through ``match.full_path``; selector order and duplicate selected
+nodes are preserved.
+
+Legacy extensions such as ``where``, arithmetic, regular-expression
+filters, and the legacy Python-style filter coercions remain available
+only from their existing ``jsonpath_ng`` and ``jsonpath_ng.ext`` entry
+points. Choosing ``jsonpath_ng.rfc9535.parse`` does not enable those
+extensions.
+
+
 JSONPath Syntax
 ---------------
 
