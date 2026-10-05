@@ -91,6 +91,36 @@ Basic examples:
     >>> jsonpath_expr_direct = Fields('foo').child(Slice('*')).child(Fields('baz'))  # This is equivalent
 
 
+Compiling JSONPath to parameterized SQLite SQL
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A small JSONPath subset (fields, indices, the array wildcard ``[*]`` and a
+single trailing scalar comparison filter) can be compiled into parameterized
+SQL that runs on the SQLite JSON1 extension, so it works with an in-memory
+``sqlite3`` database and no server:
+
+.. code:: python
+
+    >>> import sqlite3
+    >>> from jsonpath_ng.sqlite import compile_jsonpath, decode_row
+    >>> con = sqlite3.connect(":memory:")
+    >>> con.execute("CREATE TABLE docs(data TEXT)")
+    >>> con.execute("INSERT INTO docs(data) VALUES (?)",
+    ...             ('{"items": [{"price": 5}, {"price": 50}]}',))
+    >>> compiled = compile_jsonpath("$.items[?(@.price < 10)].price",
+    ...                             "docs", "data")
+    >>> rows = con.execute(compiled.sql, compiled.params).fetchall()
+    >>> [(r[1], decode_row(r[2], r[3])) for r in rows]
+    [("$['items'][0]['price']", 5)]
+
+Each row carries the normalized path, the matched value (as JSON text) and
+``json_type``; results are ordered by an explicit array-position key, never by
+physical row order. Missing values, JSON ``null``, numbers and booleans stay
+distinct, and unsupported expressions raise ``JSONPathError`` instead of being
+silently dropped. Table and column names are validated as identifiers while
+keys and literals are always passed as bind parameters. The pure-Python
+``jsonpath_ng.sqlite.find`` evaluates the same expression for cross-checking.
+
 Using the extended parser:
 
 .. code:: python
