@@ -91,6 +91,44 @@ Basic examples:
     >>> jsonpath_expr_direct = Fields('foo').child(Slice('*')).child(Fields('baz'))  # This is equivalent
 
 
+Static containment checking
+---------------------------
+
+When JSONPath selectors are used to configure permissions (for example,
+which locations of a document may be read), a newly submitted selector
+must be checked against the selectors that are already allowed.  The
+``jsonpath_ng.relation`` module compares selectors statically, by the sets
+of structural paths they may match -- a genuine set comparison, so ``$.a``
+does not cover ``$.ab`` merely because the strings share a prefix:
+
+.. code:: python
+
+  >>> from jsonpath_ng import check_relation, Relation
+
+  >>> result = check_relation("$.users[0].name", allowed=["$.users[*].name", "$.meta"])
+  >>> result.relation
+  <Relation.CONTAINED: 'contained'>
+
+  >>> result = check_relation("$.users[*].email", allowed=["$.users[*].name"])
+  >>> result.relation
+  <Relation.NOT_CONTAINED: 'not_contained'>
+  >>> result.witness_document   # small document replayable with find()
+  {'users': [{'email': None}]}
+  >>> str(result.witness_path)  # a location the candidate reaches but the allowed set does not
+  'users.[0].email'
+
+  >>> check_relation("$.users[?(@.admin)]", allowed=["$.users[*]"]).relation
+  <Relation.UNKNOWN: 'unknown'>
+
+Fields, wildcards, descendants (``..``), non-negative indices, slices with
+a finite positive step, and unions are supported.  Anything else --
+filters, ``where``, intersections, `` `parent` ``, negative indices, and so
+on -- yields ``Relation.UNKNOWN`` so callers can deny the request rather
+than trust a guess.  Only ``Relation.CONTAINED`` should be treated as an
+authorization grant; ``is_covered`` is a boolean shortcut for exactly
+that check.
+
+
 Using the extended parser:
 
 .. code:: python
