@@ -21,6 +21,10 @@ from . import iterable as _iterable
 from . import string as _string
 
 
+RFC9535 = "rfc9535"
+EXTENDED = "extended"
+
+
 class ExtendedJsonPathLexer(lexer.JsonPathLexer):
     """Custom LALR-lexer for JsonPath"""
     literals = lexer.JsonPathLexer.literals + ['?', '@', '+', '*', '/', '-']
@@ -174,5 +178,11 @@ class ExtendedJsonPathParser(parser.JsonPathParser):
 # XXX This is here for backward compatibility
 ExtentedJsonPathParser = ExtendedJsonPathParser
 
-def parse(path, debug=False):
+def parse(path, debug=False, mode=EXTENDED):
+    if mode == RFC9535:
+        from ..rfc9535 import parse as rfc9535_parse
+
+        return rfc9535_parse(path)
+    if mode != EXTENDED:
+        raise ValueError("unsupported JSONPath mode: %r" % mode)
     return ExtendedJsonPathParser(debug=debug).parse(path)

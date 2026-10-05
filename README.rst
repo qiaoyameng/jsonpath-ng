@@ -103,6 +103,46 @@ Using the extended parser:
   >>> jsonpath_expr = parse('foo[*].baz')
 
 
+RFC 9535 mode
+-------------
+
+Use the explicit RFC 9535 entry point when strict standard behavior is
+required. The existing basic and extended parsers continue to use their
+historical grammar and semantics unless this mode is selected.
+
+.. code:: python
+
+    >>> from jsonpath_ng.rfc9535 import parse
+    >>> data = {'store': {'book': [{'price': 8.95}, {'price': 12.99}]}}
+    >>> [str(match.full_path)
+    ...  for match in parse('$["store"]["book"][?@.price < 10]').find(data)]
+    ["$['store']['book'][0]"]
+
+The same mode is also available through the extended entry point:
+
+.. code:: python
+
+    >>> from jsonpath_ng.ext import RFC9535, parse
+    >>> parse('$["store"]["book"][*]', mode=RFC9535)
+
+The first RFC 9535 implementation covers member-name, array-index,
+array-slice, wildcard and descendant selectors, together with logical
+filter expressions. Filters distinguish node lists, single JSON values
+and ``Nothing``; existence tests, ``null``, booleans and numeric
+comparisons do not use Python truthiness or ``True == 1`` semantics.
+
+Comparisons accept only singular queries on either side. Non-singular
+queries remain useful for existence and logical tests, but invalid
+combinations such as comparing ``@[*]`` are rejected while parsing or
+checking the expression. Matches retain the standard's order and
+duplicate-node behavior, and ``DatumInContext.full_path`` renders as an
+RFC 9535 normalized path.
+
+Strict mode rejects legacy extensions such as ``=``, ``=~``, arithmetic
+inside filters, single-quoted name selectors and old-style queries that
+omit ``$``.
+
+
 JSONPath Syntax
 ---------------
 

@@ -12,4 +12,6 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-from .parser import parse  # noqa
+from .parser import EXTENDED, RFC9535, parse  # noqa
+
+__all__ = ["EXTENDED", "RFC9535", "parse"]
