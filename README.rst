@@ -331,6 +331,41 @@ The main parsing toolkit underlying this library,
 removed. For example, ``PYTHONOPTIMIZE=2`` and ``python -OO`` will both
 cause a failure.
 
+Incremental query sessions
+--------------------------
+
+For a long-running service that repeatedly receives JSON Patch (RFC 6902)
+batches, ``jsonpath_ng.session`` keeps the document *and* the current matches
+of registered queries, returning only the delta after each batch —
+``added``, ``removed``, ``value_changed`` and ``moved`` (a pure positional
+shift caused by array insert/delete or ``move``, distinguished from an actual
+value change)::
+
+    from jsonpath_ng.session import QuerySession
+
+    session = QuerySession(document, "$.store.book[?@.price < 10].title")
+    deltas = session.apply_patches([
+        {"op": "add", "path": "/store/book/0",
+         "value": {"title": "New", "price": 3}},
+    ])
+    delta = deltas["$.store.book[?@.price < 10].title"]
+    delta.added          # new matches
+    delta.removed        # disappeared matches
+    delta.value_changed  # (pointer, old, new)
+    delta.moved          # (old_pointer, new_pointer, value)
+
+The maintainable subset covers fields, non-negative indices, slices,
+recursive descent and the existing ``[?...]`` filters; changing a filter
+predicate field that is not part of the output path still triggers
+re-evaluation of the affected container. Patches are validated and applied in
+order and a failing batch is fully rolled back, so no partial delta is ever
+published. Queries containing nodes outside the subset (negative indices,
+unions, ``where``, ``parent``, ...) transparently fall back to a complete
+``find``; the reason is recorded in ``session.stats.fallback_queries`` and the
+fallback is counted in ``session.stats.full_recomputations``.
+``session.stats.nodes_visited`` exposes the number of document nodes actually
+touched, so patching an unrelated subtree costs no full scan.
+
 Contributors
 ------------
 
