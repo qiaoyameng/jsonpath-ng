@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 - Support Python 3.15.
 - Add a `py.typed` marker.
+- Add `jsonpath_ng.relation`, a static containment checker for JSONPath
+  selectors: `check_relation(selector, allowed)` reports whether a selector's
+  matchable structural paths are contained in an allowed set of selectors
+  (`Relation.CONTAINED`), not contained (`Relation.NOT_CONTAINED`, with a
+  small counterexample document and out-of-bounds path that replay with
+  `find()`), or undecidable for unsupported constructs (`Relation.UNKNOWN`).
+  Fields, wildcards, descendants, non-negative indices, positive-step slices
+  and unions are supported; anything else (filters, `where`, negative
+  indices, intersections, ...) yields `UNKNOWN` so callers can fail closed.
 
 ### Fixed
 - `update()` with an in-place callback returning `None` no longer overwrites the field with `None` (#163)
