@@ -211,6 +211,38 @@ Extras
    by extending the library.
 
 
+Incremental query sessions
+--------------------------
+
+Long-running services that receive a stream of `JSON Patch`_ (RFC 6902)
+batches can avoid re-running the same JSONPath from scratch after every
+patch by pinning it to a ``jsonpath_ng.session.QuerySession``:
+
+.. code:: python
+
+    >>> from jsonpath_ng.session import QuerySession
+
+    >>> session = QuerySession('$.items[?(@.stock > 0)].name', document)
+    >>> diff = session.apply_patch([
+    ...     {'op': 'replace', 'path': '/items/0/stock', 'value': 5},
+    ... ])
+    >>> diff.added, diff.removed, diff.changed, diff.moved
+
+Each batch is validated and applied in order; a failing batch is rolled
+back and publishes no partial results.  The returned ``PatchDiff``
+reports matches that were added, removed, changed in value, or merely
+moved in position (list insertion/removal and ``move`` operations).
+
+The declarative subset of JSONPath (fields, indices, slices, descendants
+and extended filters) is maintained incrementally: patches to unrelated
+subtrees skip re-evaluation entirely, and fields that only appear inside
+filter predicates still trigger recomputation of the affected candidates.
+Expressions with nodes that cannot be analyzed (e.g. ``sorted``, ``len``,
+unions) fall back to a full ``find()`` for affected batches; see
+``session.stats`` for counters and ``session.stats['fallback_reasons']``.
+
+.. _JSON Patch: https://datatracker.ietf.org/doc/html/rfc6902
+
 Extensions
 ----------
 

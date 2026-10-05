@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- Add `jsonpath_ng.session.QuerySession`: incremental JSONPath query sessions
+  over JSON Patch (RFC 6902) batches. Sessions cache the document and match
+  set, apply each batch atomically (no partial results on failure), and report
+  added/removed/value-changed matches, distinguishing position changes caused
+  by list insertion/removal and `move`. The declarative subset (fields,
+  indices, slices, descendants, extended filters) is maintained incrementally;
+  unanalyzable extension nodes fall back to a full query, recorded in
+  `session.stats`.
 - Support Python 3.15.
 - Add a `py.typed` marker.
 
