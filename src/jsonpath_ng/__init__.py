@@ -2,6 +2,8 @@ import warnings
 
 from ._deprecations import _DEPRECATED_CLASS_NAMES
 from ._deprecations import _deprecated_class_message
+from .diagnostics import DiagnosticReport  # noqa
+from .diagnostics import find_with_diagnostics  # noqa
 from .jsonpath import *  # noqa
 from .parser import parse  # noqa
 

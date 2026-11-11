@@ -16,6 +16,7 @@ import functools
 from .. import DatumInContext
 from .. import JSONPath
 from .. import This
+from .. import diagnostics
 
 
 class SortedThis(This):
@@ -88,9 +89,23 @@ class Len(JSONPath):
         try:
             value = len(datum.value)
         except TypeError:
+            diagnostics.record_step(
+                self,
+                datum,
+                1,
+                0,
+                reason=diagnostics.TYPE_MISMATCH,
+                detail=(
+                    f"`len` requires a sized value, "
+                    f"got {type(datum.value).__name__}"
+                ),
+                sample=datum.value,
+            )
             return []
         else:
-            return [DatumInContext(value, context=None, path=Len())]
+            results = [DatumInContext(value, context=None, path=Len())]
+            diagnostics.record_step(self, datum, 1, len(results))
+            return results
 
     def __eq__(self, other):
         return isinstance(other, Len)
@@ -112,12 +127,26 @@ class Keys(JSONPath):
         try:
             value = list(datum.value.keys())
         except Exception:
+            diagnostics.record_step(
+                self,
+                datum,
+                1,
+                0,
+                reason=diagnostics.TYPE_MISMATCH,
+                detail=(
+                    f"`keys` requires an object, "
+                    f"got {type(datum.value).__name__}"
+                ),
+                sample=datum.value,
+            )
             return []
         else:
-            return [
+            results = [
                 DatumInContext(value[i], context=None, path=Keys())
                 for i in range(0, len(datum.value))
             ]
+            diagnostics.record_step(self, datum, 1, len(results))
+            return results
 
     def __eq__(self, other):
         return isinstance(other, Keys)

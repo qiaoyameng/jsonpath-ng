@@ -24,6 +24,7 @@ from .. import Index
 from .. import JSONPath
 from .. import Root
 from .. import This
+from .. import diagnostics
 from .arithmetic import Operation
 
 StringOperator: t.TypeAlias = t.Literal["!=", "==", "=", "<=", "<", ">=", ">"]
@@ -115,6 +116,19 @@ def _compare(op: StringOperator | t.Literal["=~"], left: t.Any, right: t.Any) ->
     return EQUALITY_ONLY_OPERATOR_MAP[op](_equal(left, right))
 
 
+def _comparable(left: t.Any, right: t.Any) -> bool:
+    """Return whether two JSON values share an ordered comparison type.
+
+    Per RFC 9535 section 2.3.5.2.2, only two numbers or two strings are
+    ordered; every other cross-type comparison can only test equality and
+    is reported as a type mismatch by the diagnostics.
+    """
+
+    return (_is_number(left) and _is_number(right)) or (
+        isinstance(left, str) and isinstance(right, str)
+    )
+
+
 def _query_to_str(path: t.Any, leading: bool = True) -> str:
     """Serialize a query that is used inside a filter.
 
@@ -188,6 +202,7 @@ class Filter(JSONPath):
 
     def find(self, datum):
         datum = DatumInContext.wrap(datum)
+        collector = diagnostics.get_collector()
 
         if isinstance(datum.value, dict):
             candidates = datum.value.items()
@@ -196,7 +211,24 @@ class Filter(JSONPath):
             candidates = enumerate(datum.value)
             make_path = Index
         else:
+            diagnostics.record_step(
+                self,
+                datum,
+                1,
+                0,
+                reason=diagnostics.TYPE_MISMATCH,
+                detail=(
+                    f"a filter applies to an object or array, "
+                    f"got {type(datum.value).__name__}"
+                ),
+                sample=datum.value,
+            )
             return []
+
+        if collector is not None:
+            # Materialize the candidates once so the filter can count them
+            # and keep every nested step linked to its parent.
+            candidates = list(candidates)
 
         # RFC 9535 section 1.4.1: `$` is the root of the query argument,
         # so an expression that uses it must be evaluated on a candidate
@@ -207,14 +239,35 @@ class Filter(JSONPath):
                 candidate = DatumInContext(value, path=make_path(key), context=datum)
                 if all(expression.find(candidate) for expression in self.expressions):
                     results.append(candidate)
-            return results
+        elif collector is not None:
+            # Keep candidates linked to their parent so that diagnostics
+            # report the real path of every nested filter step.
+            results = []
+            for key, value in candidates:
+                candidate = DatumInContext(value, path=make_path(key), context=datum)
+                if all(expression.find(candidate) for expression in self.expressions):
+                    results.append(candidate)
+        else:
+            # Otherwise, avoid creating candidates that will not match.
+            results = [
+                DatumInContext(value, path=make_path(key), context=datum)
+                for key, value in candidates
+                if all(expression.find(value) for expression in self.expressions)
+            ]
 
-        # Otherwise, avoid creating candidates that will not match.
-        return [
-            DatumInContext(value, path=make_path(key), context=datum)
-            for key, value in candidates
-            if all(expression.find(value) for expression in self.expressions)
-        ]
+        if not results and collector is not None:
+            diagnostics.record_step(
+                self,
+                datum,
+                len(candidates),
+                0,
+                reason=diagnostics.PREDICATE_FALSE,
+                detail=(
+                    f"none of {len(candidates)} candidate(s) satisfied {self}"
+                ),
+                sample=datum.value,
+            )
+        return results
 
     @staticmethod
     def _datum(data, root):
@@ -303,10 +356,30 @@ class Expression(JSONPath):
         found = self.target.find(wrapped_datum)
 
         if self.op == "!":
-            return [] if found else [wrapped_datum]
+            results = [] if found else [wrapped_datum]
+            if not results:
+                diagnostics.record_step(
+                    self,
+                    wrapped_datum,
+                    1,
+                    0,
+                    reason=diagnostics.PREDICATE_FALSE,
+                    detail=f"negation failed: `{self.target}` matched",
+                )
+            return results
 
         if isinstance(self.value, JSONPath):
-            return self._find_with_query_operand(wrapped_datum, found)
+            results = self._find_with_query_operand(wrapped_datum, found)
+            if not results:
+                diagnostics.record_step(
+                    self,
+                    wrapped_datum,
+                    1,
+                    0,
+                    reason=diagnostics.PREDICATE_FALSE,
+                    detail=f"comparison `{self}` is false",
+                )
+            return results
 
         # A comparison with the literal `null` has `None` as its value, which is
         # otherwise only the case for the existence test and negation handled above.
@@ -314,16 +387,31 @@ class Expression(JSONPath):
         if not found:
             # RFC 9535 section 2.3.5.2.2: an empty nodelist is not equal to any value,
             # including `null`, so only `!=` is true when the member is missing.
-            return [wrapped_datum] if self.op == "!=" else []
+            results = [wrapped_datum] if self.op == "!=" else []
+            if not results:
+                diagnostics.record_step(
+                    self,
+                    wrapped_datum,
+                    1,
+                    0,
+                    detail=f"target `{self.target}` produced no candidates",
+                )
+            return results
         if self.op is None:
             return found
 
         result = []
+        first_failure: tuple[str, str] | None = None
         for data in found:
             value = data.value
             if null_comparison:
                 if EQUALITY_ONLY_OPERATOR_MAP[self.op](value is None):
                     result.append(data)
+                elif first_failure is None:
+                    first_failure = (
+                        diagnostics.PREDICATE_FALSE,
+                        f"comparison `{self}` is false",
+                    )
                 continue
             if self.op != "=~" and (
                 isinstance(value, bool) or isinstance(self.value, bool)
@@ -335,6 +423,8 @@ class Expression(JSONPath):
                 # which relies on the fact that bools in Python are singletons.
                 if EQUALITY_ONLY_OPERATOR_MAP[self.op](value is self.value):
                     result.append(data)
+                elif first_failure is None:
+                    first_failure = self._diagnose_comparison(value)
                 continue
             # RFC 9535 section 2.3.5.2.2: a string is never equal to a number,
             # and only two numbers or two strings are ordered.
@@ -344,8 +434,34 @@ class Expression(JSONPath):
                 matched = _compare(self.op, value, self.value)
             if matched:
                 result.append(data)
+            elif first_failure is None:
+                first_failure = self._diagnose_comparison(value)
 
+        if not result and first_failure is not None:
+            diagnostics.record_step(
+                self,
+                wrapped_datum,
+                len(found),
+                0,
+                reason=first_failure[0],
+                detail=first_failure[1],
+                sample=found[0].value,
+            )
         return result
+
+    def _diagnose_comparison(self, value) -> tuple[str, str]:
+        """Explain why a comparison against ``self.value`` was false."""
+
+        if not _comparable(value, self.value):
+            return (
+                diagnostics.TYPE_MISMATCH,
+                f"cannot compare {type(value).__name__} with "
+                f"{type(self.value).__name__} using `{self.op}`",
+            )
+        return (
+            diagnostics.PREDICATE_FALSE,
+            f"comparison `{self}` is false",
+        )
 
     def _find_with_query_operand(self, datum, found):
         """Compare the values found by the target to those found by the query operand.
@@ -455,6 +571,14 @@ class And(_BooleanOperation):
     def find(self, datum):
         if all(operand.find(datum) for operand in self.operands):
             return [DatumInContext.wrap(datum)]
+        diagnostics.record_step(
+            self,
+            datum,
+            1,
+            0,
+            reason=diagnostics.PREDICATE_FALSE,
+            detail=f"conjunction `{self}` is false",
+        )
         return []
 
     def _operand_to_str(self, operand: JSONPath) -> str:
@@ -470,6 +594,14 @@ class Or(_BooleanOperation):
     def find(self, datum):
         if any(operand.find(datum) for operand in self.operands):
             return [DatumInContext.wrap(datum)]
+        diagnostics.record_step(
+            self,
+            datum,
+            1,
+            0,
+            reason=diagnostics.PREDICATE_FALSE,
+            detail=f"disjunction `{self}` is false",
+        )
         return []
 
     def _operand_to_str(self, operand: JSONPath) -> str:

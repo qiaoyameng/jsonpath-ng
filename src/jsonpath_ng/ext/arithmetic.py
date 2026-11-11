@@ -15,6 +15,7 @@ import operator
 
 from .. import DatumInContext
 from .. import JSONPath
+from .. import diagnostics
 
 OPERATOR_MAP = {
     "+": operator.add,
@@ -33,6 +34,7 @@ class Operation(JSONPath):
 
     def find(self, datum):
         result = []
+        type_error = False
         if isinstance(self.left, JSONPath) and isinstance(self.right, JSONPath):
             left = self.left.find(datum)
             right = self.right.find(datum)
@@ -41,8 +43,19 @@ class Operation(JSONPath):
                     try:
                         result.append(self.op(left_datum.value, right_datum.value))
                     except TypeError:
-                        return []
+                        type_error = True
+                        break
             else:
+                diagnostics.record_step(
+                    self,
+                    datum,
+                    len(left) if isinstance(left, list) else 1,
+                    0,
+                    detail=(
+                        f"operand nodelists differ in size or are empty "
+                        f"({len(left)} vs {len(right)})"
+                    ),
+                )
                 return []
         elif isinstance(self.left, JSONPath):
             left = self.left.find(datum)
@@ -50,19 +63,35 @@ class Operation(JSONPath):
                 try:
                     result.append(self.op(left_datum.value, self.right))
                 except TypeError:
-                    return []
+                    type_error = True
+                    break
         elif isinstance(self.right, JSONPath):
             right = self.right.find(datum)
             for right_datum in right:
                 try:
                     result.append(self.op(self.left, right_datum.value))
                 except TypeError:
-                    return []
+                    type_error = True
+                    break
         else:
             try:
                 result.append(self.op(self.left, self.right))
             except TypeError:
-                return []
+                type_error = True
+
+        if type_error:
+            diagnostics.record_step(
+                self,
+                datum,
+                1,
+                0,
+                reason=diagnostics.TYPE_MISMATCH,
+                detail=(
+                    f"operator `{self.op_symbol}` does not accept these "
+                    f"operand types"
+                ),
+            )
+            return []
         return [DatumInContext.wrap(r) for r in result]
 
     def __repr__(self):

@@ -194,6 +194,38 @@ Extras
    by extending the library.
 
 
+Query diagnostics
+-----------------
+
+When a query matches nothing it can be hard to tell whether a field was
+renamed or a filter condition changed.  ``find_with_diagnostics()``
+observes the real evaluation chain and records, for every AST step, the
+number of candidates entering and leaving the step, together with the
+first locatable failure reason:
+
+.. code-block:: python
+
+    from jsonpath_ng.ext import parse
+    from jsonpath_ng.diagnostics import find_with_diagnostics
+
+    matches, report = find_with_diagnostics(
+        parse("$.store.book[?@.price < 10].title"), data
+    )
+    if not matches:
+        print(report.first_failure())
+    # DiagnosticEvent(node='@.price < 10', path='store.book.[1]',
+    #                 in=1, out=0, reason=predicate-false, ...)
+
+Failure reasons are reported separately: ``missing-field``,
+``index-out-of-range``, ``type-mismatch``, and ``predicate-false``.
+Sample values are hidden by default; pass ``include_samples=True`` to
+record them.  Collection stops at ``event_budget`` events (the default
+is 1000) and sets ``report.truncated`` without affecting the query
+result.  If evaluation raises, the completed steps stay available on
+``exc.jsonpath_diagnostics`` and the original exception is re-raised.
+
+
+
 Extensions
 ----------
 
