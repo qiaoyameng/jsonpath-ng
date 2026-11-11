@@ -5,8 +5,26 @@ from ._deprecations import _deprecated_class_message
 from .jsonpath import *  # noqa
 from .parser import parse  # noqa
 
+_SUBSCRIPTION_NAMES = frozenset(
+    {
+        "IllegalPatchPathError",
+        "Patch",
+        "PatchOperation",
+        "PatchVersionError",
+        "Subscription",
+        "SubscriptionDocument",
+        "SubscriptionError",
+        "SubscriptionPatch",
+        "SubscriptionSession",
+    }
+)
+
 
 def __getattr__(name: str) -> object:
+    if name in _SUBSCRIPTION_NAMES:
+        from . import subscription
+
+        return getattr(subscription, name)
     if name in _DEPRECATED_CLASS_NAMES:
         from . import jsonpath
 
