@@ -1,0 +1,11 @@
+Added
+-----
+
+*   Add a declarative update plan API in ``jsonpath_ng.update_plan``.
+
+    ``UpdatePlan`` resolves every rule's JSONPath expression against the same
+    original document before applying replacements and deletions in one pass,
+    so chained rules no longer shift array indices or change later matches.
+    Plans report canonical paths and source expressions for replace/delete and
+    parent/child conflicts, bind a digest of the source document to refuse
+    stale applications, and leave the input untouched when a callback fails.

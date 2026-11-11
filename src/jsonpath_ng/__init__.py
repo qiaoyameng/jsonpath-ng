@@ -4,6 +4,12 @@ from ._deprecations import _DEPRECATED_CLASS_NAMES
 from ._deprecations import _deprecated_class_message
 from .jsonpath import *  # noqa
 from .parser import parse  # noqa
+from .update_plan import PlannedUpdate  # noqa
+from .update_plan import PlanRule  # noqa
+from .update_plan import UpdatePlan  # noqa
+from .update_plan import canonical_path  # noqa
+from .update_plan import document_digest  # noqa
+from .update_plan import render_path  # noqa
 
 
 def __getattr__(name: str) -> object:
