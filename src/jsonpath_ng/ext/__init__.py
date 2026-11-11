@@ -11,3 +11,5 @@
 # under the License.
 
 from .parser import parse  # noqa
+from ..template import ParameterizedJSONPath  # noqa
+from ..template import parse_template  # noqa

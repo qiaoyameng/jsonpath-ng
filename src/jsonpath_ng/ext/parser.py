@@ -21,6 +21,7 @@ from .. import Descendants
 from .. import Fields
 from .. import Index
 from .. import JSONPath
+from .. import Placeholder
 from .. import Root
 from .. import This
 from .. import lexer
@@ -173,12 +174,18 @@ class ExtendedJsonPathParser(parser.JsonPathParser):
         | jsonpath FILTER_OP NUMBER
         | jsonpath FILTER_OP BOOL
         | jsonpath FILTER_OP NULL
+        | jsonpath FILTER_OP PARAM
         | jsonpath FILTER_OP singular_query
         """
         if len(p) == 2:
             left, op, right = p[1], None, None
         else:
             __, left, op, right = p
+            if p.slice[3].type == "PARAM":
+                # A parameter placeholder is only valid as a comparison value.
+                # It is stored as an AST node and bound when the parsed
+                # template is executed; it is never re-parsed as a query.
+                right = Placeholder(typing.cast(str, right))
             if p.slice[3].type == "singular_query" and op == "=~":
                 # The regex operator is not part of RFC 9535
                 # and takes a literal pattern.

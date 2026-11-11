@@ -78,7 +78,7 @@ class JsonPathLexer:
         "wherenot": "WHERENOT",
     }
 
-    tokens = ["DOUBLEDOT", "NUMBER", "ID", "NAMED_OPERATOR"] + list(
+    tokens = ["DOUBLEDOT", "NUMBER", "ID", "NAMED_OPERATOR", "PARAM"] + list(
         reserved_words.values()
     )
 
@@ -91,6 +91,13 @@ class JsonPathLexer:
     # Normal lexing, rather easy
     t_DOUBLEDOT = r"\.\."
     t_ignore = " \t"
+
+    def t_PARAM(self, t: _RuleToken) -> _RuleToken:
+        # A parameter placeholder, `$name`, used by parameterized queries.
+        # The name follows the identifier rules of `t_ID` without `@`.
+        r"\$[a-zA-Z_][a-zA-Z0-9_]*"
+        t.value = typing.cast(str, t.value)[1:]
+        return t
 
     def t_ID(self, t: _RuleToken) -> _RuleToken:
         # CJK: [\u4E00-\u9FA5]

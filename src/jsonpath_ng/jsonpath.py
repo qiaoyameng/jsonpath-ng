@@ -9,6 +9,7 @@ import warnings
 from jsonpath_ng._deprecations import _DEPRECATED_CLASS_NAMES
 from jsonpath_ng._deprecations import _deprecated_class_message
 from jsonpath_ng.exceptions import JSONPathError
+from jsonpath_ng.exceptions import JSONPathParameterError
 
 # Get logger name
 logger = logging.getLogger(__name__)
@@ -326,6 +327,74 @@ class This(JSONPath):
 
     def __hash__(self) -> int:
         return hash("this")
+
+
+class Placeholder(JSONPath):
+    """
+    A parameter placeholder in a parameterized query.
+
+    Concrete syntax is `$name`, where `name` identifies the value supplied
+    when the parsed template is executed. A placeholder can only appear in
+    a value position (a filter comparison operand); it can never name a
+    field, an operator, or a path segment.
+
+    The node stores no bound value, so a template can be shared across
+    executions. Binding is resolved by substituting a `BoundParameter`
+    node for this one, which keeps evaluation on the existing AST chain.
+    """
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def find(self, datum: typing.Any) -> typing.Never:
+        raise JSONPathParameterError(
+            f"Parameter ${self.name} was not bound before evaluating the query"
+        )
+
+    def __str__(self) -> str:
+        return f"${self.name}"
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self.name!r})"
+
+    def __eq__(self, other: typing.Any) -> bool:
+        return isinstance(other, Placeholder) and self.name == other.name
+
+    def __hash__(self) -> int:
+        return hash((self.__class__, self.name))
+
+
+class BoundParameter(JSONPath):
+    """
+    A placeholder resolved to the value of a single execution.
+
+    The node behaves like a JSON literal: `find()` returns the bound value
+    in a datum, so comparison and arithmetic nodes evaluate it through the
+    same code path as a literal parsed from the query text.
+    """
+
+    def __init__(self, name: str, value: typing.Any) -> None:
+        self.name = name
+        self.value = value
+
+    def find(self, datum: typing.Any) -> list[DatumInContext]:
+        return [DatumInContext.wrap(self.value)]
+
+    def __str__(self) -> str:
+        return f"${self.name}"
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self.name!r}, {self.value!r})"
+
+    def __eq__(self, other: typing.Any) -> bool:
+        return (
+            isinstance(other, BoundParameter)
+            and self.name == other.name
+            and self.value == other.value
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.__class__, self.name, repr(self.value)))
 
 
 class Child(JSONPath):

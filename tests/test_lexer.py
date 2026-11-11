@@ -26,6 +26,9 @@ token_test_cases = (
     ("|", (("|", "|"),)),
     ("where", (("where", "WHERE"),)),
     ("wherenot", (("wherenot", "WHERENOT"),)),
+    ("$name", (("name", "PARAM"),)),
+    ("$name.foo", (("name", "PARAM"), (".", "."), ("foo", "ID"))),
+    ("$a_1", (("a_1", "PARAM"),)),
 )
 
 

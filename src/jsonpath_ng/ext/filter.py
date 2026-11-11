@@ -16,6 +16,7 @@ import re
 import typing as t
 import warnings
 
+from .. import BoundParameter
 from .. import Child
 from .. import DatumInContext
 from .. import Descendants
@@ -305,12 +306,17 @@ class Expression(JSONPath):
         if self.op == "!":
             return [] if found else [wrapped_datum]
 
-        if isinstance(self.value, JSONPath):
+        # A bound parameter is a literal value even though it is an AST node.
+        if isinstance(self.value, BoundParameter):
+            comparison_value = self.value.value
+        elif isinstance(self.value, JSONPath):
             return self._find_with_query_operand(wrapped_datum, found)
+        else:
+            comparison_value = self.value
 
         # A comparison with the literal `null` has `None` as its value, which is
         # otherwise only the case for the existence test and negation handled above.
-        null_comparison = self.op is not None and self.value is None
+        null_comparison = self.op is not None and comparison_value is None
         if not found:
             # RFC 9535 section 2.3.5.2.2: an empty nodelist is not equal to any value,
             # including `null`, so only `!=` is true when the member is missing.
@@ -326,22 +332,22 @@ class Expression(JSONPath):
                     result.append(data)
                 continue
             if self.op != "=~" and (
-                isinstance(value, bool) or isinstance(self.value, bool)
+                isinstance(value, bool) or isinstance(comparison_value, bool)
             ):
                 # A boolean is never equal to a number according to RFC 9535.
                 # However, in Python, bool is a subclass of int and is comparable
                 # via equality (`False == 0`, `True == 1`).
                 # Therefore, an identity comparison (`is`) is used,
                 # which relies on the fact that bools in Python are singletons.
-                if EQUALITY_ONLY_OPERATOR_MAP[self.op](value is self.value):
+                if EQUALITY_ONLY_OPERATOR_MAP[self.op](value is comparison_value):
                     result.append(data)
                 continue
             # RFC 9535 section 2.3.5.2.2: a string is never equal to a number,
             # and only two numbers or two strings are ordered.
             if self.op == "=~":
-                matched = OPERATOR_MAP["=~"](value, self.value)
+                matched = OPERATOR_MAP["=~"](value, comparison_value)
             else:
-                matched = _compare(self.op, value, self.value)
+                matched = _compare(self.op, value, comparison_value)
             if matched:
                 result.append(data)
 
@@ -391,6 +397,8 @@ class Expression(JSONPath):
             return f"!{target}"
 
         value = self.value
+        if isinstance(value, BoundParameter):
+            value = value.value
         if isinstance(value, JSONPath):
             rendered = _query_to_str(value)
         elif value is None:

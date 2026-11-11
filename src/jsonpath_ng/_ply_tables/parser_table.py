@@ -6,9 +6,9 @@ _tabversion = '3.10'
 
 _lr_method = 'LALR'
 
-_lr_signature = "jsonpathleft,leftDOUBLEDOTleft.left|left&leftWHEREleftWHERENOTDOUBLEDOT ID NAMED_OPERATOR NUMBER WHERE WHERENOTjsonpath : jsonpath '.' jsonpath\n| jsonpath DOUBLEDOT jsonpath\n| jsonpath WHERE jsonpath\n| jsonpath WHERENOT jsonpath\n| jsonpath '|' jsonpath\n| jsonpath '&' jsonpathjsonpath : fields_or_anyjsonpath : NAMED_OPERATORjsonpath : '$'jsonpath : '[' idx ']'jsonpath : '[' slice ']'jsonpath : '[' fields ']'jsonpath : jsonpath '[' fields ']'jsonpath : jsonpath '[' idx ']'jsonpath : jsonpath '[' slice ']'jsonpath : '(' jsonpath ')'fields_or_any : fields\n| '*'\n| NUMBERfields : IDfields : fields ',' fieldsidx : NUMBERidx : idx ',' idxslice : '*'slice : maybe_int ':' maybe_int\n| maybe_int ':' maybe_int ':' maybe_intmaybe_int : NUMBER\n| emptyempty :"
+_lr_signature = "jsonpathleft,leftDOUBLEDOTleft.left|left&leftWHEREleftWHERENOTDOUBLEDOT ID NAMED_OPERATOR NUMBER PARAM WHERE WHERENOTjsonpath : jsonpath '.' jsonpath\n| jsonpath DOUBLEDOT jsonpath\n| jsonpath WHERE jsonpath\n| jsonpath WHERENOT jsonpath\n| jsonpath '|' jsonpath\n| jsonpath '&' jsonpathjsonpath : fields_or_anyjsonpath : NAMED_OPERATORjsonpath : '$'jsonpath : PARAMjsonpath : '[' idx ']'jsonpath : '[' slice ']'jsonpath : '[' fields ']'jsonpath : jsonpath '[' fields ']'jsonpath : jsonpath '[' idx ']'jsonpath : jsonpath '[' slice ']'jsonpath : '(' jsonpath ')'fields_or_any : fields\n| '*'\n| NUMBERfields : IDfields : fields ',' fieldsidx : NUMBERidx : idx ',' idxslice : '*'slice : maybe_int ':' maybe_int\n| maybe_int ':' maybe_int ':' maybe_intmaybe_int : NUMBER\n| emptyempty :"
 
-_lr_action_items = {'NAMED_OPERATOR':([0,7,11,12,13,14,15,16,],[3,3,3,3,3,3,3,3,]),'$':([0,7,11,12,13,14,15,16,],[4,4,4,4,4,4,4,4,]),'[':([0,1,2,3,4,6,7,8,9,10,11,12,13,14,15,16,26,27,28,29,30,31,32,36,38,39,41,42,43,44,45,],[5,17,-7,-8,-9,-17,5,-18,-19,-20,5,5,5,5,5,5,17,-1,-2,-3,-4,-5,-6,-10,-11,-12,-21,-16,-13,-14,-15,]),'(':([0,7,11,12,13,14,15,16,],[7,7,7,7,7,7,7,7,]),'*':([0,5,7,11,12,13,14,15,16,17,],[8,22,8,8,8,8,8,8,8,22,]),'NUMBER':([0,5,7,11,12,13,14,15,16,17,37,40,50,],[9,21,9,9,9,9,9,9,9,21,47,49,49,]),'ID':([0,5,7,11,12,13,14,15,16,17,25,],[10,10,10,10,10,10,10,10,10,10,10,]),'$end':([1,2,3,4,6,8,9,10,27,28,29,30,31,32,36,38,39,41,42,43,44,45,],[0,-7,-8,-9,-17,-18,-19,-20,-1,-2,-3,-4,-5,-6,-10,-11,-12,-21,-16,-13,-14,-15,]),'.':([1,2,3,4,6,8,9,10,26,27,28,29,30,31,32,36,38,39,41,42,43,44,45,],[11,-7,-8,-9,-17,-18,-19,-20,11,-1,11,-3,-4,-5,-6,-10,-11,-12,-21,-16,-13,-14,-15,]),'DOUBLEDOT':([1,2,3,4,6,8,9,10,26,27,28,29,30,31,32,36,38,39,41,42,43,44,45,],[12,-7,-8,-9,-17,-18,-19,-20,12,-1,-2,-3,-4,-5,-6,-10,-11,-12,-21,-16,-13,-14,-15,]),'WHERE':([1,2,3,4,6,8,9,10,26,27,28,29,30,31,32,36,38,39,41,42,43,44,45,],[13,-7,-8,-9,-17,-18,-19,-20,13,13,13,-3,-4,13,13,-10,-11,-12,-21,-16,-13,-14,-15,]),'WHERENOT':([1,2,3,4,6,8,9,10,26,27,28,29,30,31,32,36,38,39,41,42,43,44,45,],[14,-7,-8,-9,-17,-18,-19,-20,14,14,14,14,-4,14,14,-10,-11,-12,-21,-16,-13,-14,-15,]),'|':([1,2,3,4,6,8,9,10,26,27,28,29,30,31,32,36,38,39,41,42,43,44,45,],[15,-7,-8,-9,-17,-18,-19,-20,15,15,15,-3,-4,-5,-6,-10,-11,-12,-21,-16,-13,-14,-15,]),'&':([1,2,3,4,6,8,9,10,26,27,28,29,30,31,32,36,38,39,41,42,43,44,45,],[16,-7,-8,-9,-17,-18,-19,-20,16,16,16,-3,-4,16,-6,-10,-11,-12,-21,-16,-13,-14,-15,]),')':([2,3,4,6,8,9,10,26,27,28,29,30,31,32,36,38,39,41,42,43,44,45,],[-7,-8,-9,-17,-18,-19,-20,42,-1,-2,-3,-4,-5,-6,-10,-11,-12,-21,-16,-13,-14,-15,]),':':([5,17,21,23,24,40,48,49,],[-29,-29,-27,40,-28,-29,50,-27,]),',':([6,10,18,20,21,33,34,41,46,47,],[25,-20,37,25,-22,25,37,-21,-23,-22,]),']':([10,18,19,20,21,22,24,33,34,35,40,41,46,47,48,49,50,51,],[-20,36,38,39,-22,-24,-28,43,44,45,-29,-21,-23,-22,-25,-27,-29,-26,]),}
+_lr_action_items = {'NAMED_OPERATOR':([0,8,12,13,14,15,16,17,],[3,3,3,3,3,3,3,3,]),'$':([0,8,12,13,14,15,16,17,],[4,4,4,4,4,4,4,4,]),'PARAM':([0,8,12,13,14,15,16,17,],[5,5,5,5,5,5,5,5,]),'[':([0,1,2,3,4,5,7,8,9,10,11,12,13,14,15,16,17,27,28,29,30,31,32,33,37,39,40,42,43,44,45,46,],[6,18,-7,-8,-9,-10,-18,6,-19,-20,-21,6,6,6,6,6,6,18,-1,-2,-3,-4,-5,-6,-11,-12,-13,-22,-17,-14,-15,-16,]),'(':([0,8,12,13,14,15,16,17,],[8,8,8,8,8,8,8,8,]),'*':([0,6,8,12,13,14,15,16,17,18,],[9,23,9,9,9,9,9,9,9,23,]),'NUMBER':([0,6,8,12,13,14,15,16,17,18,38,41,51,],[10,22,10,10,10,10,10,10,10,22,48,50,50,]),'ID':([0,6,8,12,13,14,15,16,17,18,26,],[11,11,11,11,11,11,11,11,11,11,11,]),'$end':([1,2,3,4,5,7,9,10,11,28,29,30,31,32,33,37,39,40,42,43,44,45,46,],[0,-7,-8,-9,-10,-18,-19,-20,-21,-1,-2,-3,-4,-5,-6,-11,-12,-13,-22,-17,-14,-15,-16,]),'.':([1,2,3,4,5,7,9,10,11,27,28,29,30,31,32,33,37,39,40,42,43,44,45,46,],[12,-7,-8,-9,-10,-18,-19,-20,-21,12,-1,12,-3,-4,-5,-6,-11,-12,-13,-22,-17,-14,-15,-16,]),'DOUBLEDOT':([1,2,3,4,5,7,9,10,11,27,28,29,30,31,32,33,37,39,40,42,43,44,45,46,],[13,-7,-8,-9,-10,-18,-19,-20,-21,13,-1,-2,-3,-4,-5,-6,-11,-12,-13,-22,-17,-14,-15,-16,]),'WHERE':([1,2,3,4,5,7,9,10,11,27,28,29,30,31,32,33,37,39,40,42,43,44,45,46,],[14,-7,-8,-9,-10,-18,-19,-20,-21,14,14,14,-3,-4,14,14,-11,-12,-13,-22,-17,-14,-15,-16,]),'WHERENOT':([1,2,3,4,5,7,9,10,11,27,28,29,30,31,32,33,37,39,40,42,43,44,45,46,],[15,-7,-8,-9,-10,-18,-19,-20,-21,15,15,15,15,-4,15,15,-11,-12,-13,-22,-17,-14,-15,-16,]),'|':([1,2,3,4,5,7,9,10,11,27,28,29,30,31,32,33,37,39,40,42,43,44,45,46,],[16,-7,-8,-9,-10,-18,-19,-20,-21,16,16,16,-3,-4,-5,-6,-11,-12,-13,-22,-17,-14,-15,-16,]),'&':([1,2,3,4,5,7,9,10,11,27,28,29,30,31,32,33,37,39,40,42,43,44,45,46,],[17,-7,-8,-9,-10,-18,-19,-20,-21,17,17,17,-3,-4,17,-6,-11,-12,-13,-22,-17,-14,-15,-16,]),')':([2,3,4,5,7,9,10,11,27,28,29,30,31,32,33,37,39,40,42,43,44,45,46,],[-7,-8,-9,-10,-18,-19,-20,-21,43,-1,-2,-3,-4,-5,-6,-11,-12,-13,-22,-17,-14,-15,-16,]),':':([6,18,22,24,25,41,49,50,],[-30,-30,-28,41,-29,-30,51,-28,]),',':([7,11,19,21,22,34,35,42,47,48,],[26,-21,38,26,-23,26,38,-22,-24,-23,]),']':([11,19,20,21,22,23,25,34,35,36,41,42,47,48,49,50,51,52,],[-21,37,39,40,-23,-25,-29,44,45,46,-30,-22,-24,-23,-26,-28,-30,-27,]),}
 
 _lr_action = {}
 for _k, _v in _lr_action_items.items():
@@ -17,7 +17,7 @@ for _k, _v in _lr_action_items.items():
       _lr_action[_x][_k] = _y
 del _lr_action_items
 
-_lr_goto_items = {'jsonpath':([0,7,11,12,13,14,15,16,],[1,26,27,28,29,30,31,32,]),'fields_or_any':([0,7,11,12,13,14,15,16,],[2,2,2,2,2,2,2,2,]),'fields':([0,5,7,11,12,13,14,15,16,17,25,],[6,20,6,6,6,6,6,6,6,33,41,]),'idx':([5,17,37,],[18,34,46,]),'slice':([5,17,],[19,35,]),'maybe_int':([5,17,40,50,],[23,23,48,51,]),'empty':([5,17,40,50,],[24,24,24,24,]),}
+_lr_goto_items = {'jsonpath':([0,8,12,13,14,15,16,17,],[1,27,28,29,30,31,32,33,]),'fields_or_any':([0,8,12,13,14,15,16,17,],[2,2,2,2,2,2,2,2,]),'fields':([0,6,8,12,13,14,15,16,17,18,26,],[7,21,7,7,7,7,7,7,7,34,42,]),'idx':([6,18,38,],[19,35,47,]),'slice':([6,18,],[20,36,]),'maybe_int':([6,18,41,51,],[24,24,49,52,]),'empty':([6,18,41,51,],[25,25,25,25,]),}
 
 _lr_goto = {}
 for _k, _v in _lr_goto_items.items():
@@ -36,24 +36,25 @@ _lr_productions = [
   ('jsonpath -> fields_or_any','jsonpath',1,'p_jsonpath_fields','parser.py',138),
   ('jsonpath -> NAMED_OPERATOR','jsonpath',1,'p_jsonpath_named_operator','parser.py',145),
   ('jsonpath -> $','jsonpath',1,'p_jsonpath_root','parser.py',157),
-  ('jsonpath -> [ idx ]','jsonpath',3,'p_jsonpath_idx','parser.py',161),
-  ('jsonpath -> [ slice ]','jsonpath',3,'p_jsonpath_slice','parser.py',165),
-  ('jsonpath -> [ fields ]','jsonpath',3,'p_jsonpath_fieldbrackets','parser.py',169),
-  ('jsonpath -> jsonpath [ fields ]','jsonpath',4,'p_jsonpath_child_fieldbrackets','parser.py',173),
-  ('jsonpath -> jsonpath [ idx ]','jsonpath',4,'p_jsonpath_child_idxbrackets','parser.py',180),
-  ('jsonpath -> jsonpath [ slice ]','jsonpath',4,'p_jsonpath_child_slicebrackets','parser.py',184),
-  ('jsonpath -> ( jsonpath )','jsonpath',3,'p_jsonpath_parens','parser.py',188),
-  ('fields_or_any -> fields','fields_or_any',1,'p_fields_or_any','parser.py',194),
-  ('fields_or_any -> *','fields_or_any',1,'p_fields_or_any','parser.py',195),
-  ('fields_or_any -> NUMBER','fields_or_any',1,'p_fields_or_any','parser.py',196),
-  ('fields -> ID','fields',1,'p_fields_id','parser.py',206),
-  ('fields -> fields , fields','fields',3,'p_fields_comma','parser.py',210),
-  ('idx -> NUMBER','idx',1,'p_idx','parser.py',216),
-  ('idx -> idx , idx','idx',3,'p_idx_comma','parser.py',220),
-  ('slice -> *','slice',1,'p_slice_any','parser.py',224),
-  ('slice -> maybe_int : maybe_int','slice',3,'p_slice','parser.py',228),
-  ('slice -> maybe_int : maybe_int : maybe_int','slice',5,'p_slice','parser.py',229),
-  ('maybe_int -> NUMBER','maybe_int',1,'p_maybe_int','parser.py',233),
-  ('maybe_int -> empty','maybe_int',1,'p_maybe_int','parser.py',234),
-  ('empty -> <empty>','empty',0,'p_empty','parser.py',238),
+  ('jsonpath -> PARAM','jsonpath',1,'p_jsonpath_parameter','parser.py',161),
+  ('jsonpath -> [ idx ]','jsonpath',3,'p_jsonpath_idx','parser.py',168),
+  ('jsonpath -> [ slice ]','jsonpath',3,'p_jsonpath_slice','parser.py',172),
+  ('jsonpath -> [ fields ]','jsonpath',3,'p_jsonpath_fieldbrackets','parser.py',176),
+  ('jsonpath -> jsonpath [ fields ]','jsonpath',4,'p_jsonpath_child_fieldbrackets','parser.py',180),
+  ('jsonpath -> jsonpath [ idx ]','jsonpath',4,'p_jsonpath_child_idxbrackets','parser.py',187),
+  ('jsonpath -> jsonpath [ slice ]','jsonpath',4,'p_jsonpath_child_slicebrackets','parser.py',191),
+  ('jsonpath -> ( jsonpath )','jsonpath',3,'p_jsonpath_parens','parser.py',195),
+  ('fields_or_any -> fields','fields_or_any',1,'p_fields_or_any','parser.py',201),
+  ('fields_or_any -> *','fields_or_any',1,'p_fields_or_any','parser.py',202),
+  ('fields_or_any -> NUMBER','fields_or_any',1,'p_fields_or_any','parser.py',203),
+  ('fields -> ID','fields',1,'p_fields_id','parser.py',213),
+  ('fields -> fields , fields','fields',3,'p_fields_comma','parser.py',217),
+  ('idx -> NUMBER','idx',1,'p_idx','parser.py',223),
+  ('idx -> idx , idx','idx',3,'p_idx_comma','parser.py',227),
+  ('slice -> *','slice',1,'p_slice_any','parser.py',231),
+  ('slice -> maybe_int : maybe_int','slice',3,'p_slice','parser.py',235),
+  ('slice -> maybe_int : maybe_int : maybe_int','slice',5,'p_slice','parser.py',236),
+  ('maybe_int -> NUMBER','maybe_int',1,'p_maybe_int','parser.py',240),
+  ('maybe_int -> empty','maybe_int',1,'p_maybe_int','parser.py',241),
+  ('empty -> <empty>','empty',0,'p_empty','parser.py',245),
 ]

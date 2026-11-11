@@ -157,6 +157,13 @@ class JsonPathParser:
         "jsonpath : '$'"
         p[0] = Root()
 
+    def p_jsonpath_parameter(self, p: _Production) -> typing.Never:
+        "jsonpath : PARAM"
+        raise JsonPathParserError(
+            f"Parameter ${p[1]} is only valid as a comparison value "
+            "in an extended filter expression"
+        )
+
     def p_jsonpath_idx(self, p: _Production) -> None:
         "jsonpath : '[' idx ']'"
         p[0] = Index(*typing.cast(list[int], p[2]))

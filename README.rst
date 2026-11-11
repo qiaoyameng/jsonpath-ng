@@ -90,6 +90,32 @@ Using the extended parser:
     >>> jsonpath_expr = parse('foo[*].baz')
 
 
+Parameterized queries
+---------------------
+
+A query that is executed repeatedly with different values can be parsed once
+as a *template* and executed with a parameter dictionary for each run.
+Placeholders use the ``$name`` syntax and may only appear as a comparison
+value in a filter expression, so a parameter can never inject a field name,
+an operator, or a path segment.
+
+..  code:: pycon
+
+    >>> from jsonpath_ng.ext import parse_template
+    >>> template = parse_template('users[?@.role == $role && @.score >= $cut].name')
+    >>> [match.value for match in template.find(data, {'role': 'admin', 'cut': 80})]
+    ['alice']
+    >>> [match.value for match in template.find(data, {'role': 'user', 'cut': 50})]
+    ['bob']
+
+Parameter values may be ``None``, booleans, numbers, or strings; their types
+are preserved during comparison. Strings are always plain values, even when
+they look like expressions. A missing parameter, an unknown parameter, or a
+value of an unsupported type raises ``JSONPathParameterError`` before the
+document is accessed. The parsed template is never mutated, so it can be
+shared across threads with different parameter dictionaries.
+
+
 JSONPath Syntax
 ---------------
 
