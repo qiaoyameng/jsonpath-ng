@@ -177,6 +177,35 @@ easy to do so directly, and here are some examples:
 -  ``Descendants(jsonpath, jsonpath)``
 
 
+Lazy iteration
+~~~~~~~~~~~~~~
+
+Every expression provides ``iter_find(data)``, which yields the same
+``DatumInContext`` matches as ``find(data)``, one at a time, instead of
+building the whole list first. Closing the iterator (for example, by
+breaking out of the loop) stops the traversal and releases every match
+that has not been delivered yet:
+
+.. code-block:: python
+
+    for match in jsonpath_expr.iter_find(data):
+        if match.value == target:
+            break
+
+Most nodes stream lazily, including fields, indices, slices, wildcards,
+descendants, and filters. Two blocking boundaries are documented rather
+than hidden:
+
+-  Sorting (``SortedThis``, the named ``sorted`` operator) evaluates and
+   sorts the complete input before yielding anything, because ordering
+   requires the whole set.
+-  ``Descendants`` first evaluates its left-hand expression, then walks
+   those matches lazily.
+
+Nodes that do not override ``iter_find()`` fall back to calling
+``find()``, so they remain correct but materialize their matches eagerly.
+
+
 Extras
 ------
 

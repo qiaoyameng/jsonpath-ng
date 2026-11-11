@@ -187,6 +187,18 @@ class Filter(JSONPath):
         return False
 
     def find(self, datum):
+        return list(self.iter_find(datum))
+
+    def iter_find(self, datum):
+        """Yield the matching candidates one at a time.
+
+        Candidates are streamed in their natural order: each candidate's
+        filter expressions are evaluated only when that candidate is reached,
+        so closing the iterator skips the remaining candidates. Evaluating a
+        single candidate may itself call ``find()`` on sub-expressions,
+        which blocks only for that candidate, never for the whole input.
+        """
+
         datum = DatumInContext.wrap(datum)
 
         if isinstance(datum.value, dict):
@@ -196,25 +208,22 @@ class Filter(JSONPath):
             candidates = enumerate(datum.value)
             make_path = Index
         else:
-            return []
+            return
 
         # RFC 9535 section 1.4.1: `$` is the root of the query argument,
         # so an expression that uses it must be evaluated on a candidate
         # that is linked to its parent.
         if self._references_root():
-            results = []
             for key, value in candidates:
                 candidate = DatumInContext(value, path=make_path(key), context=datum)
                 if all(expression.find(candidate) for expression in self.expressions):
-                    results.append(candidate)
-            return results
+                    yield candidate
+            return
 
         # Otherwise, avoid creating candidates that will not match.
-        return [
-            DatumInContext(value, path=make_path(key), context=datum)
-            for key, value in candidates
-            if all(expression.find(value) for expression in self.expressions)
-        ]
+        for key, value in candidates:
+            if all(expression.find(value) for expression in self.expressions):
+                yield DatumInContext(value, path=make_path(key), context=datum)
 
     @staticmethod
     def _datum(data, root):

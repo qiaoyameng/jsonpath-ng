@@ -63,6 +63,21 @@ class SortedThis(This):
             ]
         return datum
 
+    def iter_find(self, datum):
+        """Yield the sorted value of This.
+
+        This is a blocking boundary of an otherwise lazy ``iter_find()``
+        chain: sorting requires every element, so nothing is yielded until
+        the whole value has been sorted. ``find()`` may return a bare datum
+        instead of a list, which is normalized here.
+        """
+
+        found = self.find(datum)
+        if isinstance(found, list):
+            yield from found
+        else:
+            yield found
+
     def __eq__(self, other):
         return isinstance(other, SortedThis) and self.expressions == other.expressions
 

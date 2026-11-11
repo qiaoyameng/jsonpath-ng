@@ -1,0 +1,11 @@
+Added
+-----
+
+*   Add ``JSONPath.iter_find()``, which lazily yields the same matches
+    that ``find()`` returns as a list.
+
+    Closing the iterator stops the traversal and releases every match that
+    has not been delivered yet. Fields, indices, slices, wildcards,
+    descendants, and filters stream lazily; sorting (``SortedThis``) and
+    the left-hand side of ``Descendants`` are documented blocking
+    boundaries that still evaluate eagerly.

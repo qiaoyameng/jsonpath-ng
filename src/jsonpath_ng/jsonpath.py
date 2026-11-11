@@ -42,6 +42,24 @@ class JSONPath:
         """
         raise NotImplementedError()
 
+    def iter_find(self, data: typing.Any) -> typing.Iterator[DatumInContext]:
+        """
+        Lazily yield the matches that `find()` returns as a list.
+
+        The default implementation is a fallback, not a lazy evaluation:
+        it calls `find()`, materializing every match before the first one
+        is yielded. Nodes that can stream their matches override this.
+        Nodes that inherently need the whole input — sorting, for example —
+        keep a documented blocking boundary instead of pretending the whole
+        chain is lazy.
+
+        Every override must yield the same `DatumInContext` objects, in the
+        same order and with the same duplicates, as `find()` would produce.
+        Objects already delivered to a caller keep their position even when
+        the iterator is closed before it is exhausted.
+        """
+        yield from self.find(data)
+
     def find_or_create(self, data: typing.Any) -> list[DatumInContext]:
         return self.find(data)
 
@@ -274,13 +292,17 @@ class Root(JSONPath):
     """
 
     def find(self, data: DatumInContext | typing.Any) -> list[DatumInContext]:
+        return list(self.iter_find(data))
+
+    def iter_find(
+        self, data: DatumInContext | typing.Any
+    ) -> typing.Iterator[DatumInContext]:
         if not isinstance(data, DatumInContext):
-            return [DatumInContext(data, path=Root(), context=None)]
+            yield DatumInContext(data, path=Root(), context=None)
+        elif data.context is None:
+            yield DatumInContext(data.value, context=None, path=Root())
         else:
-            if data.context is None:
-                return [DatumInContext(data.value, context=None, path=Root())]
-            else:
-                return Root().find(data.context)
+            yield from Root().iter_find(data.context)
 
     def update(self, data: typing.Any, val: typing.Any) -> typing.Any:
         return val
@@ -339,17 +361,18 @@ class Child(JSONPath):
         self.right = right
 
     def find(self, datum: typing.Any) -> list[DatumInContext]:
+        return list(self.iter_find(datum))
+
+    def iter_find(self, datum: typing.Any) -> typing.Iterator[DatumInContext]:
         """
         Extra special case: auto ids do not have children,
         so cut it off right now rather than auto id the auto id
         """
 
-        return [
-            submatch
-            for subdata in self.left.find(datum)
-            if not isinstance(subdata, AutoIdForDatum)
-            for submatch in self.right.find(subdata)
-        ]
+        for subdata in self.left.iter_find(datum):
+            if isinstance(subdata, AutoIdForDatum):
+                continue
+            yield from self.right.iter_find(subdata)
 
     def update(self, data: typing.Any, val: typing.Any) -> typing.Any:
         return self._update_with_root(data, val, data)
@@ -428,6 +451,12 @@ class Parent(JSONPath):
         assert context is not None
         return [context]
 
+    def iter_find(self, datum: DatumInContext) -> typing.Iterator[DatumInContext]:
+        datum = DatumInContext.wrap(datum)
+        context = datum.context
+        assert context is not None
+        yield context
+
     def __eq__(self, other: typing.Any) -> bool:
         return isinstance(other, Parent)
 
@@ -456,7 +485,12 @@ class Where(JSONPath):
         self.right = right
 
     def find(self, data: typing.Any) -> list[DatumInContext]:
-        return [subdata for subdata in self.left.find(data) if self.right.find(subdata)]
+        return list(self.iter_find(data))
+
+    def iter_find(self, data: typing.Any) -> typing.Iterator[DatumInContext]:
+        for subdata in self.left.iter_find(data):
+            if self.right.find(subdata):
+                yield subdata
 
     def update(self, data: typing.Any, val: typing.Any) -> typing.Any:
         for datum in self.find(data):
@@ -497,9 +531,12 @@ class WhereNot(Where):
     """
 
     def find(self, data: typing.Any) -> list[DatumInContext]:
-        return [
-            subdata for subdata in self.left.find(data) if not self.right.find(subdata)
-        ]
+        return list(self.iter_find(data))
+
+    def iter_find(self, data: typing.Any) -> typing.Iterator[DatumInContext]:
+        for subdata in self.left.iter_find(data):
+            if not self.right.find(subdata):
+                yield subdata
 
     def __str__(self) -> str:
         return f"{self.left} wherenot {self.right}"
@@ -526,11 +563,16 @@ class Descendants(JSONPath):
         self.right = right
 
     def find(self, datum: typing.Any) -> list[DatumInContext]:
+        return list(self.iter_find(datum))
+
+    def iter_find(self, datum: typing.Any) -> typing.Iterator[DatumInContext]:
         # <left> .. <right> ==> <left> . (<right> | *..<right> | [*]..<right>)
         #
         # This walks the data directly instead of delegating to that equivalence.
 
-        # Get all left matches into a list.
+        # Get all left matches into a list. This is a blocking boundary:
+        # the descendants of every left-hand match are walked lazily,
+        # but the left matches themselves are evaluated up front.
         # Some `find()` implementations (e.g. `Filter`, `SortedThis`)
         # return a bare datum instead of a list, so this is typed as `Any`.
         left_matches: typing.Any = self.left.find(datum)
@@ -542,17 +584,18 @@ class Descendants(JSONPath):
         # Walk the data depth-first and in pre-order using an explicit stack.
         # The next datum to visit is at the end of the list (which is cheap to pop),
         # so children are pushed in reverse to be visited in their natural order.
-        right_find = self.right.find
-        matches: list[DatumInContext] = []
+        # The stack lives inside this generator, so closing the iterator releases
+        # every datum and child datum that has not been delivered yet.
+        right_iter_find = self.right.iter_find
         stack = left_matches[::-1]
         while stack:
-            datum = stack.pop()
-            matches.extend(right_find(datum))
+            current = stack.pop()
+            yield from right_iter_find(current)
 
-            value = datum.value
+            value = current.value
             if isinstance(value, list):
                 children = [
-                    DatumInContext(child, context=datum, path=Index(i))
+                    DatumInContext(child, context=current, path=Index(i))
                     for i, child in enumerate(value)
                 ]
                 children.reverse()
@@ -560,12 +603,12 @@ class Descendants(JSONPath):
             elif isinstance(value, dict):
                 stack.extend(
                     DatumInContext(
-                        child, context=datum, path=Fields._compliant_constructor(field)
+                        child,
+                        context=current,
+                        path=Fields._compliant_constructor(field),
                     )
                     for field, child in reversed(value.items())
                 )
-
-        return matches
 
     def is_singular(self) -> typing.Literal[False]:
         return False
@@ -669,7 +712,11 @@ class _Union(JSONPath):
         return False
 
     def find(self, data: typing.Any) -> list[DatumInContext]:
-        return self.left.find(data) + self.right.find(data)
+        return list(self.iter_find(data))
+
+    def iter_find(self, data: typing.Any) -> typing.Iterator[DatumInContext]:
+        yield from self.left.iter_find(data)
+        yield from self.right.iter_find(data)
 
     def __eq__(self, other: typing.Any) -> bool:
         return (
@@ -801,20 +848,25 @@ class Fields(JSONPath):
                 return ()
 
     def find(self, datum: typing.Any) -> list[DatumInContext]:
-        return self._find_base(datum, create=False)
+        return list(self.iter_find(datum))
+
+    def iter_find(self, datum: typing.Any) -> typing.Iterator[DatumInContext]:
+        yield from self._iter_find_base(datum, create=False)
 
     def find_or_create(self, datum: typing.Any) -> list[DatumInContext]:
-        return self._find_base(datum, create=True)
+        return list(self._iter_find_base(datum, create=True))
 
-    def _find_base(self, datum: typing.Any, create: bool) -> list[DatumInContext]:
+    def _iter_find_base(
+        self, datum: typing.Any, create: bool
+    ) -> typing.Iterator[DatumInContext]:
         datum = DatumInContext.wrap(datum)
         if self._is_wildcard_on_array(datum.value):
-            return _find_array_elements(datum)
-        field_data = [
-            self.get_field_datum(datum, field, create)
-            for field in self.reified_fields(datum)
-        ]
-        return [fd for fd in field_data if fd is not None]
+            yield from _iter_array_elements(datum)
+            return
+        for field in self.reified_fields(datum):
+            field_datum = self.get_field_datum(datum, field, create)
+            if field_datum is not None:
+                yield field_datum
 
     def update(self, data: typing.Any, val: typing.Any) -> typing.Any:
         if self._deprecated_wildcard_use and isinstance(data, list):
@@ -902,24 +954,29 @@ class Wildcard(JSONPath):
             return ()
 
     def find(self, datum: typing.Any) -> list[DatumInContext]:
+        return list(self.iter_find(datum))
+
+    def iter_find(self, datum: typing.Any) -> typing.Iterator[DatumInContext]:
         datum = DatumInContext.wrap(datum)
         if isinstance(datum.value, (list, tuple)):
-            return _find_array_elements(datum)
+            yield from _iter_array_elements(datum)
+            return
         if isinstance(datum.value, dict) and auto_id_field is None:
             # Without auto ids, every member exists, so skip the per-name lookups.
             make_path = Fields._compliant_constructor
-            return [
-                DatumInContext(value, path=make_path(key), context=datum)
-                for key, value in datum.value.items()
-            ]
+            for key, value in datum.value.items():
+                yield DatumInContext(value, path=make_path(key), context=datum)
+            return
         try:
             keys = tuple(datum.value.keys())
         except AttributeError:
-            return []
+            return
         if auto_id_field is not None:
             keys += (auto_id_field,)
-        field_data = [Fields.get_field_datum(datum, key, False) for key in keys]
-        return [fd for fd in field_data if fd is not None]
+        for key in keys:
+            field_datum = Fields.get_field_datum(datum, key, False)
+            if field_datum is not None:
+                yield field_datum
 
     def update(self, data: typing.Any, val: typing.Any) -> typing.Any:
         if isinstance(data, list):
@@ -971,28 +1028,31 @@ class Index(JSONPath):
         self.indices = indices
 
     def find(self, datum: typing.Any) -> list[DatumInContext]:
-        return self._find_base(datum, create=False)
+        return list(self.iter_find(datum))
+
+    def iter_find(self, datum: typing.Any) -> typing.Iterator[DatumInContext]:
+        yield from self._iter_find_base(datum, create=False)
 
     def find_or_create(self, datum: typing.Any) -> list[DatumInContext]:
-        return self._find_base(datum, create=True)
+        return list(self._iter_find_base(datum, create=True))
 
-    def _find_base(self, datum: typing.Any, create: bool) -> list[DatumInContext]:
+    def _iter_find_base(
+        self, datum: typing.Any, create: bool
+    ) -> typing.Iterator[DatumInContext]:
         datum = DatumInContext.wrap(datum)
         if create:
             if datum.value == {}:
                 datum.value = _create_list_key(datum.value)
             self._pad_value(datum.value)
-        rv: list[DatumInContext] = []
         if not isinstance(datum.value, (list, tuple)):
             # Integer indices only apply to arrays.
-            return rv
+            return
         for index in self.indices:
-            # invalid indices do not crash, return [] instead
+            # invalid indices do not crash, yield nothing instead
             if datum.value and -len(datum.value) <= index < len(datum.value):
-                rv += [
-                    DatumInContext(datum.value[index], path=Index(index), context=datum)
-                ]
-        return rv
+                yield DatumInContext(
+                    datum.value[index], path=Index(index), context=datum
+                )
 
     def update(self, data: typing.Any, val: typing.Any) -> typing.Any:
         if not isinstance(data, list):
@@ -1133,29 +1193,30 @@ class Slice(JSONPath):
         return node
 
     def find(self, datum: typing.Any) -> list[DatumInContext]:
+        return list(self.iter_find(datum))
+
+    def iter_find(self, datum: typing.Any) -> typing.Iterator[DatumInContext]:
         datum = DatumInContext.wrap(datum)
 
         if self._deprecated_wildcard_use and isinstance(datum.value, dict):
-            return [
-                DatumInContext(
+            for field, value in datum.value.items():
+                yield DatumInContext(
                     value, path=Fields._compliant_constructor(field), context=datum
                 )
-                for field, value in datum.value.items()
-            ]
+            return
 
         if not isinstance(datum.value, (list, tuple)):
-            return []
+            return
 
         if self.step == 0:
-            return []
+            return
 
         if self.start is None and self.end is None and self.step is None:
-            return _find_array_elements(datum)
+            yield from _iter_array_elements(datum)
+            return
 
-        return [
-            DatumInContext(datum.value[i], path=Index(i), context=datum)
-            for i in range(0, len(datum.value))[self.start : self.end : self.step]
-        ]
+        for i in range(0, len(datum.value))[self.start : self.end : self.step]:
+            yield DatumInContext(datum.value[i], path=Index(i), context=datum)
 
     def update(self, data: typing.Any, val: typing.Any) -> typing.Any:
         for datum in self.find(data):
@@ -1229,13 +1290,11 @@ class Slice(JSONPath):
         return hash((self.start, self.end, self.step, self._deprecated_wildcard_use))
 
 
-def _find_array_elements(datum: DatumInContext) -> list[DatumInContext]:
-    """Find every element of the array in `datum`."""
+def _iter_array_elements(datum: DatumInContext) -> typing.Iterator[DatumInContext]:
+    """Yield every element of the array in `datum`."""
 
-    return [
-        DatumInContext(child, path=Index(i), context=datum)
-        for i, child in enumerate(datum.value)
-    ]
+    for i, child in enumerate(datum.value):
+        yield DatumInContext(child, path=Index(i), context=datum)
 
 
 def _update_array_elements(data: list[typing.Any], val: typing.Any) -> list[typing.Any]:
