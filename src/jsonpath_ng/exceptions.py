@@ -8,3 +8,7 @@ class JsonPathLexerError(JSONPathError):
 
 class JsonPathParserError(JSONPathError):
     pass
+
+
+class SQLiteCompilationError(JSONPathError):
+    """A JSONPath AST cannot be compiled to SQLite JSON1 SQL."""
