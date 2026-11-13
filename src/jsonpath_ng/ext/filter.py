@@ -24,6 +24,7 @@ from .. import Index
 from .. import JSONPath
 from .. import Root
 from .. import This
+from .. import diagnostics as _diagnostics
 from .arithmetic import Operation
 
 StringOperator: t.TypeAlias = t.Literal["!=", "==", "=", "<=", "<", ">=", ">"]
@@ -187,34 +188,62 @@ class Filter(JSONPath):
         return False
 
     def find(self, datum):
-        datum = DatumInContext.wrap(datum)
+        event = _diagnostics.start(self, datum)
+        try:
+            datum = DatumInContext.wrap(datum)
 
-        if isinstance(datum.value, dict):
-            candidates = datum.value.items()
-            make_path = Fields._compliant_constructor
-        elif isinstance(datum.value, list):
-            candidates = enumerate(datum.value)
-            make_path = Index
-        else:
-            return []
+            if isinstance(datum.value, dict):
+                candidates = datum.value.items()
+                make_path = Fields._compliant_constructor
+            elif isinstance(datum.value, list):
+                candidates = enumerate(datum.value)
+                make_path = Index
+            else:
+                _diagnostics.record_failure(
+                    event,
+                    _diagnostics.TYPE_MISMATCH,
+                    f"filters require an object or array, "
+                    f"got {type(datum.value).__name__}",
+                )
+                _diagnostics.finish(event, [])
+                return []
 
-        # RFC 9535 section 1.4.1: `$` is the root of the query argument,
-        # so an expression that uses it must be evaluated on a candidate
-        # that is linked to its parent.
-        if self._references_root():
-            results = []
-            for key, value in candidates:
-                candidate = DatumInContext(value, path=make_path(key), context=datum)
-                if all(expression.find(candidate) for expression in self.expressions):
-                    results.append(candidate)
+            if event is not None:
+                event.input_count = len(datum.value)
+
+            # RFC 9535 section 1.4.1: `$` is the root of the query argument,
+            # so an expression that uses it must be evaluated on a candidate
+            # that is linked to its parent.
+            # Diagnostics also need linked candidates so that events
+            # keep the path of each candidate.
+            if self._references_root() or event is not None:
+                results = []
+                for key, value in candidates:
+                    candidate = DatumInContext(
+                        value, path=make_path(key), context=datum
+                    )
+                    if all(
+                        expression.find(candidate) for expression in self.expressions
+                    ):
+                        results.append(candidate)
+            else:
+                # Otherwise, avoid creating candidates that will not match.
+                results = [
+                    DatumInContext(value, path=make_path(key), context=datum)
+                    for key, value in candidates
+                    if all(expression.find(value) for expression in self.expressions)
+                ]
+
+            if event is not None and len(datum.value) > 0 and not results:
+                _diagnostics.record_failure(
+                    event,
+                    _diagnostics.PREDICATE_FALSE,
+                    f"no candidate satisfied {self.expressions[0]}",
+                )
+            _diagnostics.finish(event, results)
             return results
-
-        # Otherwise, avoid creating candidates that will not match.
-        return [
-            DatumInContext(value, path=make_path(key), context=datum)
-            for key, value in candidates
-            if all(expression.find(value) for expression in self.expressions)
-        ]
+        finally:
+            _diagnostics.finish(event)
 
     @staticmethod
     def _datum(data, root):
@@ -299,53 +328,124 @@ class Expression(JSONPath):
         self.value = value
 
     def find(self, datum):
-        wrapped_datum = DatumInContext.wrap(datum)
-        found = self.target.find(wrapped_datum)
+        event = _diagnostics.start(self, datum)
+        try:
+            wrapped_datum = DatumInContext.wrap(datum)
+            found = self.target.find(wrapped_datum)
+
+            if self.op == "!":
+                result = [] if found else [wrapped_datum]
+            elif isinstance(self.value, JSONPath):
+                result = self._find_with_query_operand(wrapped_datum, found)
+            else:
+                # A comparison with the literal `null` has `None` as its value,
+                # which is otherwise only the case for the existence test
+                # and negation handled above.
+                null_comparison = self.op is not None and self.value is None
+                if not found:
+                    # RFC 9535 section 2.3.5.2.2: an empty nodelist is not equal
+                    # to any value, including `null`, so only `!=` is true
+                    # when the member is missing.
+                    result = [wrapped_datum] if self.op == "!=" else []
+                elif self.op is None:
+                    result = found
+                else:
+                    result = []
+                    for data in found:
+                        value = data.value
+                        if null_comparison:
+                            if EQUALITY_ONLY_OPERATOR_MAP[self.op](value is None):
+                                result.append(data)
+                            continue
+                        if self.op != "=~" and (
+                            isinstance(value, bool) or isinstance(self.value, bool)
+                        ):
+                            # A boolean is never equal to a number according to
+                            # RFC 9535. However, in Python, bool is a subclass
+                            # of int and is comparable via equality
+                            # (`False == 0`, `True == 1`).
+                            # Therefore, an identity comparison (`is`) is used,
+                            # which relies on the fact that bools in Python
+                            # are singletons.
+                            if EQUALITY_ONLY_OPERATOR_MAP[self.op](
+                                value is self.value
+                            ):
+                                result.append(data)
+                            continue
+                        # RFC 9535 section 2.3.5.2.2: a string is never equal
+                        # to a number, and only two numbers or two strings
+                        # are ordered.
+                        if self.op == "=~":
+                            matched = OPERATOR_MAP["=~"](value, self.value)
+                        else:
+                            matched = _compare(self.op, value, self.value)
+                        if matched:
+                            result.append(data)
+
+            if event is not None and not result:
+                self._diagnose_find(event, found)
+            _diagnostics.finish(event, result)
+            return result
+        finally:
+            _diagnostics.finish(event)
+
+    def _diagnose_find(self, event, found) -> None:
+        """Report why a false predicate lost its candidates."""
 
         if self.op == "!":
-            return [] if found else [wrapped_datum]
-
+            _diagnostics.record_failure(
+                event,
+                _diagnostics.PREDICATE_FALSE,
+                f"negated target {self.target} exists",
+            )
+            return
+        if not found and not isinstance(self.value, JSONPath) and self.op != "!=":
+            # The target subtree already reports the miss (e.g. a missing field).
+            return
         if isinstance(self.value, JSONPath):
-            return self._find_with_query_operand(wrapped_datum, found)
-
-        # A comparison with the literal `null` has `None` as its value, which is
-        # otherwise only the case for the existence test and negation handled above.
-        null_comparison = self.op is not None and self.value is None
-        if not found:
-            # RFC 9535 section 2.3.5.2.2: an empty nodelist is not equal to any value,
-            # including `null`, so only `!=` is true when the member is missing.
-            return [wrapped_datum] if self.op == "!=" else []
-        if self.op is None:
-            return found
-
-        result = []
+            _diagnostics.record_failure(
+                event,
+                _diagnostics.PREDICATE_FALSE,
+                f"comparison with query operand failed for {self}",
+            )
+            return
         for data in found:
             value = data.value
-            if null_comparison:
-                if EQUALITY_ONLY_OPERATOR_MAP[self.op](value is None):
-                    result.append(data)
-                continue
-            if self.op != "=~" and (
-                isinstance(value, bool) or isinstance(self.value, bool)
+            if self.op == "=~" and not isinstance(value, str):
+                _diagnostics.record_failure(
+                    event,
+                    _diagnostics.TYPE_MISMATCH,
+                    f"regex match requires a string, got "
+                    f"{type(value).__name__} in {self}",
+                )
+                return
+            if self.op in ("<", "<=", ">", ">=") and not (
+                (_is_number(value) and _is_number(self.value))
+                or (isinstance(value, str) and isinstance(self.value, str))
             ):
-                # A boolean is never equal to a number according to RFC 9535.
-                # However, in Python, bool is a subclass of int and is comparable
-                # via equality (`False == 0`, `True == 1`).
-                # Therefore, an identity comparison (`is`) is used,
-                # which relies on the fact that bools in Python are singletons.
-                if EQUALITY_ONLY_OPERATOR_MAP[self.op](value is self.value):
-                    result.append(data)
-                continue
-            # RFC 9535 section 2.3.5.2.2: a string is never equal to a number,
-            # and only two numbers or two strings are ordered.
-            if self.op == "=~":
-                matched = OPERATOR_MAP["=~"](value, self.value)
-            else:
-                matched = _compare(self.op, value, self.value)
-            if matched:
-                result.append(data)
-
-        return result
+                _diagnostics.record_failure(
+                    event,
+                    _diagnostics.TYPE_MISMATCH,
+                    f"cannot order {type(value).__name__} against "
+                    f"{type(self.value).__name__} in {self}",
+                )
+                return
+            if (
+                self.op != "=~"
+                and self.value is not None
+                and isinstance(value, bool) != isinstance(self.value, bool)
+            ):
+                _diagnostics.record_failure(
+                    event,
+                    _diagnostics.TYPE_MISMATCH,
+                    f"boolean compared with non-boolean in {self}",
+                )
+                return
+        _diagnostics.record_failure(
+            event,
+            _diagnostics.PREDICATE_FALSE,
+            f"no value satisfied {self}",
+        )
 
     def _find_with_query_operand(self, datum, found):
         """Compare the values found by the target to those found by the query operand.
@@ -453,9 +553,20 @@ class And(_BooleanOperation):
     op = "&&"
 
     def find(self, datum):
-        if all(operand.find(datum) for operand in self.operands):
-            return [DatumInContext.wrap(datum)]
-        return []
+        event = _diagnostics.start(self, datum)
+        try:
+            if all(operand.find(datum) for operand in self.operands):
+                result = [DatumInContext.wrap(datum)]
+            else:
+                result = []
+            if not result:
+                _diagnostics.record_failure(
+                    event, _diagnostics.PREDICATE_FALSE, f"not all of {self}"
+                )
+            _diagnostics.finish(event, result)
+            return result
+        finally:
+            _diagnostics.finish(event)
 
     def _operand_to_str(self, operand: JSONPath) -> str:
         # `||` binds less tightly than `&&`.
@@ -468,9 +579,20 @@ class Or(_BooleanOperation):
     op = "||"
 
     def find(self, datum):
-        if any(operand.find(datum) for operand in self.operands):
-            return [DatumInContext.wrap(datum)]
-        return []
+        event = _diagnostics.start(self, datum)
+        try:
+            if any(operand.find(datum) for operand in self.operands):
+                result = [DatumInContext.wrap(datum)]
+            else:
+                result = []
+            if not result:
+                _diagnostics.record_failure(
+                    event, _diagnostics.PREDICATE_FALSE, f"none of {self}"
+                )
+            _diagnostics.finish(event, result)
+            return result
+        finally:
+            _diagnostics.finish(event)
 
     def _operand_to_str(self, operand: JSONPath) -> str:
         # `&&` binds more tightly, so an `And` operand needs no parentheses.

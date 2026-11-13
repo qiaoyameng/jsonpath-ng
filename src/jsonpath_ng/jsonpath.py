@@ -10,6 +10,8 @@ from jsonpath_ng._deprecations import _DEPRECATED_CLASS_NAMES
 from jsonpath_ng._deprecations import _deprecated_class_message
 from jsonpath_ng.exceptions import JSONPathError
 
+from . import diagnostics as _diagnostics
+
 # Get logger name
 logger = logging.getLogger(__name__)
 
@@ -274,13 +276,18 @@ class Root(JSONPath):
     """
 
     def find(self, data: DatumInContext | typing.Any) -> list[DatumInContext]:
-        if not isinstance(data, DatumInContext):
-            return [DatumInContext(data, path=Root(), context=None)]
-        else:
-            if data.context is None:
-                return [DatumInContext(data.value, context=None, path=Root())]
+        event = _diagnostics.start(self, data)
+        try:
+            if not isinstance(data, DatumInContext):
+                result = [DatumInContext(data, path=Root(), context=None)]
+            elif data.context is None:
+                result = [DatumInContext(data.value, context=None, path=Root())]
             else:
-                return Root().find(data.context)
+                result = Root().find(data.context)
+            _diagnostics.finish(event, result)
+            return result
+        finally:
+            _diagnostics.finish(event)
 
     def update(self, data: typing.Any, val: typing.Any) -> typing.Any:
         return val
@@ -307,7 +314,13 @@ class This(JSONPath):
     """
 
     def find(self, datum: typing.Any) -> list[DatumInContext]:
-        return [DatumInContext.wrap(datum)]
+        event = _diagnostics.start(self, datum)
+        try:
+            result = [DatumInContext.wrap(datum)]
+            _diagnostics.finish(event, result)
+            return result
+        finally:
+            _diagnostics.finish(event)
 
     def update(self, data: typing.Any, val: typing.Any) -> typing.Any:
         return val
@@ -344,12 +357,18 @@ class Child(JSONPath):
         so cut it off right now rather than auto id the auto id
         """
 
-        return [
-            submatch
-            for subdata in self.left.find(datum)
-            if not isinstance(subdata, AutoIdForDatum)
-            for submatch in self.right.find(subdata)
-        ]
+        event = _diagnostics.start(self, datum)
+        try:
+            result = [
+                submatch
+                for subdata in self.left.find(datum)
+                if not isinstance(subdata, AutoIdForDatum)
+                for submatch in self.right.find(subdata)
+            ]
+            _diagnostics.finish(event, result)
+            return result
+        finally:
+            _diagnostics.finish(event)
 
     def update(self, data: typing.Any, val: typing.Any) -> typing.Any:
         return self._update_with_root(data, val, data)
@@ -456,7 +475,21 @@ class Where(JSONPath):
         self.right = right
 
     def find(self, data: typing.Any) -> list[DatumInContext]:
-        return [subdata for subdata in self.left.find(data) if self.right.find(subdata)]
+        event = _diagnostics.start(self, data)
+        try:
+            result = [
+                subdata for subdata in self.left.find(data) if self.right.find(subdata)
+            ]
+            if not result:
+                _diagnostics.record_failure(
+                    event,
+                    _diagnostics.PREDICATE_FALSE,
+                    f"no match on `{self.right}`",
+                )
+            _diagnostics.finish(event, result)
+            return result
+        finally:
+            _diagnostics.finish(event)
 
     def update(self, data: typing.Any, val: typing.Any) -> typing.Any:
         for datum in self.find(data):
@@ -497,9 +530,23 @@ class WhereNot(Where):
     """
 
     def find(self, data: typing.Any) -> list[DatumInContext]:
-        return [
-            subdata for subdata in self.left.find(data) if not self.right.find(subdata)
-        ]
+        event = _diagnostics.start(self, data)
+        try:
+            result = [
+                subdata
+                for subdata in self.left.find(data)
+                if not self.right.find(subdata)
+            ]
+            if not result:
+                _diagnostics.record_failure(
+                    event,
+                    _diagnostics.PREDICATE_FALSE,
+                    f"every match excluded by `{self.right}`",
+                )
+            _diagnostics.finish(event, result)
+            return result
+        finally:
+            _diagnostics.finish(event)
 
     def __str__(self) -> str:
         return f"{self.left} wherenot {self.right}"
@@ -530,42 +577,50 @@ class Descendants(JSONPath):
         #
         # This walks the data directly instead of delegating to that equivalence.
 
-        # Get all left matches into a list.
-        # Some `find()` implementations (e.g. `Filter`, `SortedThis`)
-        # return a bare datum instead of a list, so this is typed as `Any`.
-        left_matches: typing.Any = self.left.find(datum)
+        event = _diagnostics.start(self, datum)
+        try:
+            # Get all left matches into a list.
+            # Some `find()` implementations (e.g. `Filter`, `SortedThis`)
+            # return a bare datum instead of a list, so this is typed as `Any`.
+            left_matches: typing.Any = self.left.find(datum)
 
-        # TODO: Remove this condition once all `find()` methods return lists.
-        if not isinstance(left_matches, list):
-            left_matches = [left_matches]
+            # TODO: Remove this condition once all `find()` methods return lists.
+            if not isinstance(left_matches, list):
+                left_matches = [left_matches]
 
-        # Walk the data depth-first and in pre-order using an explicit stack.
-        # The next datum to visit is at the end of the list (which is cheap to pop),
-        # so children are pushed in reverse to be visited in their natural order.
-        right_find = self.right.find
-        matches: list[DatumInContext] = []
-        stack = left_matches[::-1]
-        while stack:
-            datum = stack.pop()
-            matches.extend(right_find(datum))
+            # Walk the data depth-first and in pre-order using an explicit stack.
+            # The next datum to visit is at the end of the list (which is cheap
+            # to pop), so children are pushed in reverse to be visited in their
+            # natural order.
+            right_find = self.right.find
+            matches: list[DatumInContext] = []
+            stack = left_matches[::-1]
+            while stack:
+                datum = stack.pop()
+                matches.extend(right_find(datum))
 
-            value = datum.value
-            if isinstance(value, list):
-                children = [
-                    DatumInContext(child, context=datum, path=Index(i))
-                    for i, child in enumerate(value)
-                ]
-                children.reverse()
-                stack.extend(children)
-            elif isinstance(value, dict):
-                stack.extend(
-                    DatumInContext(
-                        child, context=datum, path=Fields._compliant_constructor(field)
+                value = datum.value
+                if isinstance(value, list):
+                    children = [
+                        DatumInContext(child, context=datum, path=Index(i))
+                        for i, child in enumerate(value)
+                    ]
+                    children.reverse()
+                    stack.extend(children)
+                elif isinstance(value, dict):
+                    stack.extend(
+                        DatumInContext(
+                            child,
+                            context=datum,
+                            path=Fields._compliant_constructor(field),
+                        )
+                        for field, child in reversed(value.items())
                     )
-                    for field, child in reversed(value.items())
-                )
 
-        return matches
+            _diagnostics.finish(event, matches)
+            return matches
+        finally:
+            _diagnostics.finish(event)
 
     def is_singular(self) -> typing.Literal[False]:
         return False
@@ -669,7 +724,13 @@ class _Union(JSONPath):
         return False
 
     def find(self, data: typing.Any) -> list[DatumInContext]:
-        return self.left.find(data) + self.right.find(data)
+        event = _diagnostics.start(self, data)
+        try:
+            result = self.left.find(data) + self.right.find(data)
+            _diagnostics.finish(event, result)
+            return result
+        finally:
+            _diagnostics.finish(event)
 
     def __eq__(self, other: typing.Any) -> bool:
         return (
@@ -807,14 +868,51 @@ class Fields(JSONPath):
         return self._find_base(datum, create=True)
 
     def _find_base(self, datum: typing.Any, create: bool) -> list[DatumInContext]:
-        datum = DatumInContext.wrap(datum)
+        event = _diagnostics.start(self, datum)
+        try:
+            datum = DatumInContext.wrap(datum)
+            if self._is_wildcard_on_array(datum.value):
+                result = _find_array_elements(datum)
+            else:
+                field_data = [
+                    self.get_field_datum(datum, field, create)
+                    for field in self.reified_fields(datum)
+                ]
+                result = [fd for fd in field_data if fd is not None]
+            if event is not None and not create:
+                self._diagnose_find(event, datum)
+            _diagnostics.finish(event, result)
+            return result
+        finally:
+            _diagnostics.finish(event)
+
+    def _diagnose_find(
+        self, event: _diagnostics.DiagnosticEvent, datum: DatumInContext
+    ) -> None:
+        """Report the first locatable reason a field lookup missed."""
+
         if self._is_wildcard_on_array(datum.value):
-            return _find_array_elements(datum)
-        field_data = [
-            self.get_field_datum(datum, field, create)
-            for field in self.reified_fields(datum)
-        ]
-        return [fd for fd in field_data if fd is not None]
+            return
+        get = getattr(datum.value, "get", None)
+        if get is None:
+            _diagnostics.record_failure(
+                event,
+                _diagnostics.TYPE_MISMATCH,
+                f"fields require an object, got {type(datum.value).__name__}",
+            )
+            return
+        for field in self.reified_fields(datum):
+            if field == auto_id_field:
+                continue
+            try:
+                missing = get(field, NOT_SET) is NOT_SET
+            except Exception:
+                missing = False
+            if missing:
+                _diagnostics.record_failure(
+                    event, _diagnostics.MISSING_FIELD, f"no field {field!r}"
+                )
+                return
 
     def update(self, data: typing.Any, val: typing.Any) -> typing.Any:
         if self._deprecated_wildcard_use and isinstance(data, list):
@@ -902,24 +1000,46 @@ class Wildcard(JSONPath):
             return ()
 
     def find(self, datum: typing.Any) -> list[DatumInContext]:
-        datum = DatumInContext.wrap(datum)
-        if isinstance(datum.value, (list, tuple)):
-            return _find_array_elements(datum)
-        if isinstance(datum.value, dict) and auto_id_field is None:
-            # Without auto ids, every member exists, so skip the per-name lookups.
-            make_path = Fields._compliant_constructor
-            return [
-                DatumInContext(value, path=make_path(key), context=datum)
-                for key, value in datum.value.items()
-            ]
+        event = _diagnostics.start(self, datum)
         try:
-            keys = tuple(datum.value.keys())
-        except AttributeError:
-            return []
-        if auto_id_field is not None:
-            keys += (auto_id_field,)
-        field_data = [Fields.get_field_datum(datum, key, False) for key in keys]
-        return [fd for fd in field_data if fd is not None]
+            datum = DatumInContext.wrap(datum)
+            if isinstance(datum.value, (list, tuple)):
+                result = _find_array_elements(datum)
+            elif isinstance(datum.value, dict) and auto_id_field is None:
+                # Without auto ids, every member exists,
+                # so skip the per-name lookups.
+                make_path = Fields._compliant_constructor
+                result = [
+                    DatumInContext(value, path=make_path(key), context=datum)
+                    for key, value in datum.value.items()
+                ]
+            else:
+                try:
+                    keys = tuple(datum.value.keys())
+                except AttributeError:
+                    result = []
+                else:
+                    if auto_id_field is not None:
+                        keys += (auto_id_field,)
+                    field_data = [
+                        Fields.get_field_datum(datum, key, False) for key in keys
+                    ]
+                    result = [fd for fd in field_data if fd is not None]
+            if (
+                event is not None
+                and not result
+                and not isinstance(datum.value, (list, tuple, dict))
+            ):
+                _diagnostics.record_failure(
+                    event,
+                    _diagnostics.TYPE_MISMATCH,
+                    f"wildcard requires an object or array, "
+                    f"got {type(datum.value).__name__}",
+                )
+            _diagnostics.finish(event, result)
+            return result
+        finally:
+            _diagnostics.finish(event)
 
     def update(self, data: typing.Any, val: typing.Any) -> typing.Any:
         if isinstance(data, list):
@@ -977,22 +1097,49 @@ class Index(JSONPath):
         return self._find_base(datum, create=True)
 
     def _find_base(self, datum: typing.Any, create: bool) -> list[DatumInContext]:
-        datum = DatumInContext.wrap(datum)
-        if create:
-            if datum.value == {}:
-                datum.value = _create_list_key(datum.value)
-            self._pad_value(datum.value)
-        rv: list[DatumInContext] = []
-        if not isinstance(datum.value, (list, tuple)):
-            # Integer indices only apply to arrays.
+        event = _diagnostics.start(self, datum)
+        try:
+            datum = DatumInContext.wrap(datum)
+            if create:
+                if datum.value == {}:
+                    datum.value = _create_list_key(datum.value)
+                self._pad_value(datum.value)
+            rv: list[DatumInContext] = []
+            if isinstance(datum.value, (list, tuple)):
+                for index in self.indices:
+                    # invalid indices do not crash, return [] instead
+                    if datum.value and -len(datum.value) <= index < len(datum.value):
+                        rv += [
+                            DatumInContext(
+                                datum.value[index], path=Index(index), context=datum
+                            )
+                        ]
+            # else: integer indices only apply to arrays.
+            if event is not None and not create:
+                if not isinstance(datum.value, (list, tuple)):
+                    _diagnostics.record_failure(
+                        event,
+                        _diagnostics.TYPE_MISMATCH,
+                        f"indices require an array, "
+                        f"got {type(datum.value).__name__}",
+                    )
+                else:
+                    for index in self.indices:
+                        if not (
+                            datum.value
+                            and -len(datum.value) <= index < len(datum.value)
+                        ):
+                            _diagnostics.record_failure(
+                                event,
+                                _diagnostics.INDEX_OUT_OF_RANGE,
+                                f"index {index} out of range for array of "
+                                f"length {len(datum.value)}",
+                            )
+                            break
+            _diagnostics.finish(event, rv)
             return rv
-        for index in self.indices:
-            # invalid indices do not crash, return [] instead
-            if datum.value and -len(datum.value) <= index < len(datum.value):
-                rv += [
-                    DatumInContext(datum.value[index], path=Index(index), context=datum)
-                ]
-        return rv
+        finally:
+            _diagnostics.finish(event)
 
     def update(self, data: typing.Any, val: typing.Any) -> typing.Any:
         if not isinstance(data, list):
@@ -1133,29 +1280,39 @@ class Slice(JSONPath):
         return node
 
     def find(self, datum: typing.Any) -> list[DatumInContext]:
-        datum = DatumInContext.wrap(datum)
+        event = _diagnostics.start(self, datum)
+        try:
+            datum = DatumInContext.wrap(datum)
 
-        if self._deprecated_wildcard_use and isinstance(datum.value, dict):
-            return [
-                DatumInContext(
-                    value, path=Fields._compliant_constructor(field), context=datum
+            if self._deprecated_wildcard_use and isinstance(datum.value, dict):
+                result = [
+                    DatumInContext(
+                        value, path=Fields._compliant_constructor(field), context=datum
+                    )
+                    for field, value in datum.value.items()
+                ]
+            elif not isinstance(datum.value, (list, tuple)):
+                result = []
+                _diagnostics.record_failure(
+                    event,
+                    _diagnostics.TYPE_MISMATCH,
+                    f"slices require an array, got {type(datum.value).__name__}",
                 )
-                for field, value in datum.value.items()
-            ]
-
-        if not isinstance(datum.value, (list, tuple)):
-            return []
-
-        if self.step == 0:
-            return []
-
-        if self.start is None and self.end is None and self.step is None:
-            return _find_array_elements(datum)
-
-        return [
-            DatumInContext(datum.value[i], path=Index(i), context=datum)
-            for i in range(0, len(datum.value))[self.start : self.end : self.step]
-        ]
+            elif self.step == 0:
+                result = []
+            elif self.start is None and self.end is None and self.step is None:
+                result = _find_array_elements(datum)
+            else:
+                result = [
+                    DatumInContext(datum.value[i], path=Index(i), context=datum)
+                    for i in range(0, len(datum.value))[
+                        self.start : self.end : self.step
+                    ]
+                ]
+            _diagnostics.finish(event, result)
+            return result
+        finally:
+            _diagnostics.finish(event)
 
     def update(self, data: typing.Any, val: typing.Any) -> typing.Any:
         for datum in self.find(data):
