@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import re
 import typing
 import warnings
 
@@ -67,7 +68,7 @@ class ExtendedJsonPathLexer(lexer.JsonPathLexer):
     _ply_table_module = "jsonpath_ng._ply_tables.ext_lexer_table"
     literals = lexer.JsonPathLexer.literals + ["?", "@", "+", "*", "/", "-", "!"]
     tokens = (
-        ["BOOL", "NULL"]
+        ["BOOL", "NULL", "PLACEHOLDER"]
         + lexer.JsonPathLexer.tokens
         + ["FILTER_OP", "SORT_DIRECTION", "FLOAT", "AND", "OR"]
     )
@@ -100,6 +101,17 @@ class ExtendedJsonPathLexer(lexer.JsonPathLexer):
     def t_FLOAT(self, t: _RuleToken) -> _RuleToken:
         r"-?\d+\.\d+"
         t.value = float(typing.cast(str, t.value))
+        return t
+
+    def t_PLACEHOLDER(self, t: _RuleToken) -> _RuleToken:
+        r":(?:[A-Za-z_][A-Za-z0-9_@\-]*|'[^'\\]*(?:\\.[^'\\]*)*'|\"[^\"\\]*(?:\\.[^\"\\]*)*\")"
+        token = typing.cast(str, t.value)[1:]
+        if token[0] in ("'", '"'):
+            # Reuse the field-literal decoding: a backslash escapes the
+            # following character, so the name is kept as an opaque key.
+            token = token[1:-1]
+            token = re.sub(r"\\(.)", r"\1", token)
+        t.value = token
         return t
 
 
@@ -174,12 +186,15 @@ class ExtendedJsonPathParser(parser.JsonPathParser):
         | jsonpath FILTER_OP BOOL
         | jsonpath FILTER_OP NULL
         | jsonpath FILTER_OP singular_query
+        | jsonpath FILTER_OP PLACEHOLDER
         """
         if len(p) == 2:
             left, op, right = p[1], None, None
         else:
             __, left, op, right = p
-            if p.slice[3].type == "singular_query" and op == "=~":
+            if p.slice[3].type == "PLACEHOLDER":
+                right = _filter.Parameter(typing.cast(str, right))
+            elif p.slice[3].type == "singular_query" and op == "=~":
                 # The regex operator is not part of RFC 9535
                 # and takes a literal pattern.
                 raise JsonPathParserError(

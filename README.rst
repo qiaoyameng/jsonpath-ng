@@ -286,6 +286,31 @@ Example with data:
 
 | ``$.objects[\*].cow + $.objects[\*].cat`` returns ``[6, 9]``
 
+Parameterized queries
+---------------------
+
+A query template is parsed once and executed any number of times with
+different parameter dictionaries. A parameter is written as ``:name``,
+or ``:'name'`` when the name contains characters such as quotes,
+backslashes, or brackets, and it may only appear where a filter comparison
+expects a literal value. Parameters therefore cannot inject field names,
+operators, or path segments, and ``null``, booleans, numbers, and strings
+keep their JSON type.
+
+..  code-block:: python
+
+    from jsonpath_ng.ext import parse_template
+
+    template = parse_template("$.objects[?(@.name == :name)]")
+    template.find(
+        {"objects": [{"name": "a"}, {"name": "b"}]},
+        {"name": "a"},
+    )
+
+Missing parameters, duplicate parameter declarations, and unsupported
+parameter types raise an exception before the document is accessed.
+The same template is safe to execute concurrently with different parameters.
+
 Other examples
 --------------
 

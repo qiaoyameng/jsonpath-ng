@@ -15,7 +15,9 @@ import operator
 import re
 import typing as t
 import warnings
+from contextvars import ContextVar
 
+from ..exceptions import MissingParameterError
 from .. import Child
 from .. import DatumInContext
 from .. import Descendants
@@ -56,6 +58,18 @@ EQUALITY_ONLY_OPERATOR_MAP: dict[str, t.Callable[[t.Any], bool]] = {
     "<": lambda equal: False,
     ">": lambda equal: False,
 }
+
+#: The parameter bindings in effect while a parameterized query evaluates.
+#:
+#: A `ContextVar` (rather than a plain global) keeps concurrent executions
+#: of the same parsed template isolated from one another. Nested filters
+#: share the same binding because evaluation happens within one context.
+_current_bindings: ContextVar[dict[str, t.Any] | None] = ContextVar(
+    "jsonpath_ng_parameter_bindings", default=None
+)
+
+#: Names that can be written as a bare `:name` placeholder.
+_BARE_PARAMETER_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_@\-]*$")
 
 
 def _is_number(value: t.Any) -> bool:
@@ -146,6 +160,54 @@ def _query_to_str(path: t.Any, leading: bool = True) -> str:
         right = _query_to_str(path.right)
         return f"{left} {path.op_symbol} {right}"
     return str(path)
+
+
+class Parameter(JSONPath):
+    """A named placeholder whose value is supplied when the query executes.
+
+    A parameter only ever stands for a JSON value
+    (null, a boolean, a number, or a string).
+    It is parsed as a distinct token, so the parameter name is an opaque
+    lookup key: quotes, backslashes, or bracket-like characters in the name
+    can never alter the surrounding query structure.
+
+    The node reuses the ordinary AST evaluation chain: when `find()` runs,
+    the bound value is resolved through `_current_bindings`,
+    so nested filters and descendant traversals share one set of bindings
+    while concurrent executions of the same template stay isolated.
+    """
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def resolve(self) -> t.Any:
+        """Return the value bound to this parameter for the current execution."""
+
+        bindings = _current_bindings.get()
+        if bindings is None or self.name not in bindings:
+            # `ParameterizedQuery` validates bindings before touching the data,
+            # so this only guards against a bare node evaluated outside a template.
+            raise MissingParameterError(
+                f"No value was provided for parameter {self.name!r}"
+            )
+        return bindings[self.name]
+
+    def find(self, datum):
+        return [DatumInContext.wrap(self.resolve())]
+
+    def __str__(self) -> str:
+        if _BARE_PARAMETER_NAME.match(self.name):
+            return f":{self.name}"
+        return f":{self.name!r}"
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self.name!r})"
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, Parameter) and other.name == self.name
+
+    def __hash__(self) -> int:
+        return hash((Parameter, self.name))
 
 
 class Filter(JSONPath):
@@ -305,12 +367,14 @@ class Expression(JSONPath):
         if self.op == "!":
             return [] if found else [wrapped_datum]
 
-        if isinstance(self.value, JSONPath):
+        value = self.value.resolve() if isinstance(self.value, Parameter) else self.value
+
+        if isinstance(value, JSONPath):
             return self._find_with_query_operand(wrapped_datum, found)
 
         # A comparison with the literal `null` has `None` as its value, which is
         # otherwise only the case for the existence test and negation handled above.
-        null_comparison = self.op is not None and self.value is None
+        null_comparison = self.op is not None and value is None
         if not found:
             # RFC 9535 section 2.3.5.2.2: an empty nodelist is not equal to any value,
             # including `null`, so only `!=` is true when the member is missing.
@@ -320,28 +384,28 @@ class Expression(JSONPath):
 
         result = []
         for data in found:
-            value = data.value
+            datum_value = data.value
             if null_comparison:
-                if EQUALITY_ONLY_OPERATOR_MAP[self.op](value is None):
+                if EQUALITY_ONLY_OPERATOR_MAP[self.op](datum_value is None):
                     result.append(data)
                 continue
             if self.op != "=~" and (
-                isinstance(value, bool) or isinstance(self.value, bool)
+                isinstance(datum_value, bool) or isinstance(value, bool)
             ):
                 # A boolean is never equal to a number according to RFC 9535.
                 # However, in Python, bool is a subclass of int and is comparable
                 # via equality (`False == 0`, `True == 1`).
                 # Therefore, an identity comparison (`is`) is used,
                 # which relies on the fact that bools in Python are singletons.
-                if EQUALITY_ONLY_OPERATOR_MAP[self.op](value is self.value):
+                if EQUALITY_ONLY_OPERATOR_MAP[self.op](datum_value is value):
                     result.append(data)
                 continue
             # RFC 9535 section 2.3.5.2.2: a string is never equal to a number,
             # and only two numbers or two strings are ordered.
             if self.op == "=~":
-                matched = OPERATOR_MAP["=~"](value, self.value)
+                matched = OPERATOR_MAP["=~"](datum_value, value)
             else:
-                matched = _compare(self.op, value, self.value)
+                matched = _compare(self.op, datum_value, value)
             if matched:
                 result.append(data)
 

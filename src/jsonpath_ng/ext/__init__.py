@@ -11,3 +11,5 @@
 # under the License.
 
 from .parser import parse  # noqa
+from .template import ParameterizedQuery  # noqa
+from .template import parse_template  # noqa
