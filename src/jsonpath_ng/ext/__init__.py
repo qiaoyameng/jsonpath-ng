@@ -10,4 +10,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+from .json1 import CompiledJSON1Query  # noqa
+from .json1 import compile_json1  # noqa
+from .json1 import render_canonical_path  # noqa
 from .parser import parse  # noqa

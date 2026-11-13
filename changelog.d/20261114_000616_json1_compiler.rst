@@ -1,0 +1,14 @@
+Added
+-----
+
+*   Add an explicit SQLite JSON1 compilation entry point, ``jsonpath_ng.ext.compile_json1()``.
+
+    The compiler turns a supported JSONPath into SQL text and bound parameters so
+    documents stored in a SQLite column can be filtered inside the database.
+    The first version supports object fields, array indices (including negative
+    indices), the ``*`` wildcard, and filters with existence checks, negation,
+    scalar comparisons and ``&&``/``||`` combinations.  Results include each
+    matched value together with its normalized path, preserve boolean versus
+    number and missing versus null semantics, and keep array output in document
+    order.  Unsupported AST nodes raise ``JSON1CompileError`` before execution
+    instead of being silently dropped.
