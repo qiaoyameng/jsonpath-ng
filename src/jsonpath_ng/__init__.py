@@ -4,6 +4,25 @@ from ._deprecations import _DEPRECATED_CLASS_NAMES
 from ._deprecations import _deprecated_class_message
 from .jsonpath import *  # noqa
 from .parser import parse  # noqa
+from .update_plan import ConflictUpdatePlanError  # noqa
+from .update_plan import StaleUpdatePlanError  # noqa
+from .update_plan import UpdateConflict  # noqa
+from .update_plan import UpdateOperation  # noqa
+from .update_plan import UpdatePlan  # noqa
+from .update_plan import UpdatePlanConflict  # noqa
+from .update_plan import UpdatePlanConflictError  # noqa
+from .update_plan import UpdatePlanError  # noqa
+from .update_plan import UpdatePlanStale  # noqa
+from .update_plan import UpdatePlanStaleError  # noqa
+from .update_plan import UpdatePlanner  # noqa
+from .update_plan import UpdateRule  # noqa
+from .update_plan import UnsupportedUpdateDataError  # noqa
+from .update_plan import apply_update_plan  # noqa
+from .update_plan import build_update_plan  # noqa
+from .update_plan import create_update_plan  # noqa
+from .update_plan import make_update_plan  # noqa
+from .update_plan import plan_update  # noqa
+from .update_plan import update_plan  # noqa
 
 
 def __getattr__(name: str) -> object:

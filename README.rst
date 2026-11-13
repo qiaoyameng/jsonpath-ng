@@ -82,6 +82,54 @@ Basic examples:
     True
 
 
+Planning a multi-rule update
+============================
+
+``update()`` and ``filter()`` evaluate each expression immediately. Use an
+``UpdatePlan`` when several expressions must all resolve against the same
+original document, especially when array elements will be deleted. Each rule
+is planned against a private snapshot, the resulting operations can be
+inspected, and ``apply()`` performs one atomic update.
+
+..  code:: pycon
+
+    >>> from jsonpath_ng import UpdatePlan
+    >>> document = {
+    ...     'threshold': 100,
+    ...     'items': [
+    ...         {'name': 'cheap', 'price': 50},
+    ...         {'name': 'premium', 'price': 150},
+    ...     ],
+    ... }
+    >>> plan = UpdatePlan(document)
+    >>> _ = plan.replace(
+    ...     '$.items[?@.price < $.threshold].price',
+    ...     lambda value, parent, key: value + 10,
+    ... )
+    >>> _ = plan.delete('$.items[?@.price >= $.threshold]')
+    >>> [(operation.action, operation.path) for operation in plan.operations]
+    [('replace', '$.items[0].price'), ('delete', '$.items[1]')]
+    >>> plan.apply()
+    {'threshold': 100, 'items': [{'name': 'cheap', 'price': 60}]}
+
+The first version supports plain, acyclic ``dict``/``list`` documents with
+JSON scalar leaves, and the ``replace`` and ``delete`` actions. Array indices
+always refer to positions in the original document. Repeated hits on the same
+physical container position produce one operation, while equal values in
+different positions remain separate operations.
+
+``plan.conflicts`` exposes unresolved parent/child, replacement/deletion, and
+other target conflicts. Applying a conflicting plan raises
+``UpdatePlanConflictError`` and includes the canonical paths and source
+expressions on both the exception and each conflict. A plan also records a
+SHA-256 digest of its original document; if the document changes before
+``apply()``, ``UpdatePlanStaleError`` is raised.
+
+Replacement callbacks use the same ``(value, container, key)`` signature as
+``update()``. A plan applies to a working copy and commits only after every
+callback succeeds, so a callback failure leaves the original document and the
+already-computed plan available for inspection.
+
 Using the extended parser:
 
 ..  code:: pycon
