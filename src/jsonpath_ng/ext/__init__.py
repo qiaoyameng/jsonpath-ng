@@ -11,3 +11,14 @@
 # under the License.
 
 from .parser import parse  # noqa
+from .patch import ABSENT  # noqa
+from .patch import OperationEvent  # noqa
+from .patch import PatchError  # noqa
+from .patch import VersionMismatchError  # noqa
+from .patch import VersionedDocument  # noqa
+from .subscription import MatchChange  # noqa
+from .subscription import Notification  # noqa
+from .subscription import Subscription  # noqa
+from .subscription import SubscriptionClosedError  # noqa
+from .subscription import SubscriptionLimitError  # noqa
+from .subscription import SubscriptionSession  # noqa
