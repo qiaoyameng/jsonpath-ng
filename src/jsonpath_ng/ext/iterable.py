@@ -63,6 +63,21 @@ class SortedThis(This):
             ]
         return datum
 
+    def iter_find(self, datum):
+        """
+        Yield the sorted value.
+
+        Sorting is a blocking boundary: the complete collection must be read and
+        sorted before the first (and only) match can be produced.  The returned
+        iterator is lazy only in the sense that the match is yielded on demand;
+        calling `next()` performs the full sort.
+        """
+        result = self.find(datum)
+        if isinstance(result, DatumInContext):
+            yield result
+        else:
+            yield from result
+
     def __eq__(self, other):
         return isinstance(other, SortedThis) and self.expressions == other.expressions
 

@@ -1,0 +1,10 @@
+Added
+-----
+
+*   Add ``JSONPath.iter_find()`` to stream matches
+    without computing the full result first.
+
+    Field, index, slice, wildcard, descendant, and filter selectors preserve the
+    ordering, duplicate matches, and ``full_path`` values produced by ``find()``.
+    ``find()`` continues to return a list. Operations that require all of the data,
+    such as sorting with ``SortedThis``, document that they block before yielding.

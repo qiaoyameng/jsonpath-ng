@@ -186,7 +186,14 @@ class Filter(JSONPath):
 
         return False
 
-    def find(self, datum):
+    def iter_find(self, datum):
+        """
+        Lazily yield the members that satisfy every filter expression.
+
+        Candidates are taken from the mapping or array one at a time.  If the
+        iterator is closed early, members that have not been reached are never
+        examined or retained as `DatumInContext` objects.
+        """
         datum = DatumInContext.wrap(datum)
 
         if isinstance(datum.value, dict):
@@ -202,19 +209,16 @@ class Filter(JSONPath):
         # so an expression that uses it must be evaluated on a candidate
         # that is linked to its parent.
         if self._references_root():
-            results = []
             for key, value in candidates:
                 candidate = DatumInContext(value, path=make_path(key), context=datum)
                 if all(expression.find(candidate) for expression in self.expressions):
-                    results.append(candidate)
-            return results
+                    yield candidate
+            return
 
         # Otherwise, avoid creating candidates that will not match.
-        return [
-            DatumInContext(value, path=make_path(key), context=datum)
-            for key, value in candidates
-            if all(expression.find(value) for expression in self.expressions)
-        ]
+        for key, value in candidates:
+            if all(expression.find(value) for expression in self.expressions):
+                yield DatumInContext(value, path=make_path(key), context=datum)
 
     @staticmethod
     def _datum(data, root):
